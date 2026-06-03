@@ -2,12 +2,17 @@ import type { ExtractorContext, ProductVariantOption } from "../types";
 import { extractGenericProduct } from "./generic";
 import {
   cleanText,
+  dedupeImages,
   dedupeVariantOptions,
   finalizeResult,
   getUrlPathCode,
+  isLikelySizeLabel,
   loadHtml,
   mergeProductResults,
+  normalizeImageUrl,
   parsePrice,
+  replaceImages,
+  replaceVariants,
 } from "../utils";
 
 function gucciSizes($: ReturnType<typeof loadHtml>): ProductVariantOption[] {
@@ -21,7 +26,7 @@ function gucciSizes($: ReturnType<typeof loadHtml>): ProductVariantOption[] {
         cleanText($element.attr("aria-label")?.replace(/^(size|talla|talle)[:\s-]*/i, "")) ??
         cleanText($element.attr("value")) ??
         cleanText($element.text());
-      if (!label || label.length > 40) return;
+      if (!label || !isLikelySizeLabel(label)) return;
       sizes.push({
         label,
         available: !/disabled|unavailable|sold/i.test(
@@ -68,6 +73,33 @@ export async function extractGucciProduct(context: ExtractorContext) {
         sizes: gucciSizes($),
       },
       extraction: { method: "store-specific", storeSpecific: true },
+    });
+    const imageNeedle = productId?.replace(/^(\d+)([A-Z]+)(\d+)$/i, "$1_$2_$3");
+    const pdpImages = dedupeImages(
+      $("img, source")
+        .map((_, element) =>
+          normalizeImageUrl(
+            $(element).attr("src") ??
+              $(element).attr("data-src") ??
+              $(element).attr("srcset")?.split(",").at(-1)?.trim().split(/\s+/)[0],
+            context.finalUrl ?? context.normalized.normalizedUrl,
+          ),
+        )
+        .get()
+        .filter((image): image is string =>
+          Boolean(
+            image &&
+              /gucci/i.test(image) &&
+              (!imageNeedle || image.toLowerCase().includes(imageNeedle.toLowerCase())),
+          ),
+        ),
+      context.normalized.normalizedUrl,
+    );
+    if (pdpImages.length > 0) {
+      result = replaceImages(result, pdpImages);
+    }
+    result = replaceVariants(result, {
+      sizes: gucciSizes($),
     });
   }
 

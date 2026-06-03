@@ -6,25 +6,28 @@ import {
   extractJsonSnippetValue,
   finalizeResult,
   getUrlPathCode,
+  isLikelyColorLabel,
+  isLikelySizeLabel,
   loadHtml,
   mergeProductResults,
   normalizeImageUrl,
   parsePrice,
+  replaceVariants,
   selectedParam,
 } from "../utils";
 
 function nikeSizeOptions(html: string): ProductVariantOption[] {
   const sizes = new Set<string>();
   const patterns = [
-    /"localizedSize"\s*:\s*"([^"]+)"/gi,
-    /"size"\s*:\s*"([^"]+)"/gi,
+    /"localizedLabel"\s*:\s*"([^"]+)"/gi,
+    /"label"\s*:\s*"([^"]+)"/gi,
     /aria-label=["'](?:Size|Talla|Talle)\s+([^"']+)["']/gi,
   ];
 
   for (const pattern of patterns) {
     for (const match of html.matchAll(pattern)) {
       const label = cleanText(match[1]);
-      if (label && label.length <= 30) sizes.add(label);
+      if (label && isLikelySizeLabel(label)) sizes.add(label);
     }
   }
 
@@ -53,33 +56,31 @@ export async function extractNikeProduct(context: ExtractorContext) {
     const baseUrl = context.finalUrl ?? context.normalized.normalizedUrl;
     const colors: ProductVariantOption[] = [];
 
-    $("a[href*='/t/'], button, [role='button']").each((_, element) => {
+    $("[data-testid^='colorway-chip-']").each((_, element) => {
       const label =
+        cleanText($(element).attr("alt")) ??
         cleanText($(element).attr("aria-label")) ??
-        cleanText($(element).attr("title")) ??
-        cleanText($(element).find("img").attr("alt")) ??
-        cleanText($(element).text());
-      const href = normalizeImageUrl($(element).attr("href"), baseUrl);
+        cleanText($(element).attr("title"));
+      if (!label || !isLikelyColorLabel(label)) return;
+      const link = $(element).closest("a");
+      const href = normalizeImageUrl(link.attr("href"), baseUrl);
       const image = normalizeImageUrl(
-        $(element).find("img").attr("src") ?? $(element).find("img").attr("data-src"),
+        $(element).attr("src") ?? $(element).attr("data-src"),
         baseUrl,
       );
-      const text = `${label ?? ""} ${$(element).attr("class") ?? ""}`.toLowerCase();
-      if (label && /(color|colour|colorway|style|selected|available|agotado)/i.test(text)) {
-        colors.push({
-          label,
-          available: !/disabled|unavailable|sold out|agotado/i.test(text),
-          image,
-          url: href,
-        });
-      }
+      colors.push({
+        label,
+        available: !/disabled|unavailable|sold out|agotado/i.test(link.attr("class") ?? ""),
+        image,
+        url: href,
+      });
     });
 
     const embeddedColor = extractJsonSnippetValue(
       context.html,
       /"colorDescription"\s*:\s*"([^"]+)"/i,
     );
-    if (embeddedColor) colors.push({ label: embeddedColor });
+    if (embeddedColor && isLikelyColorLabel(embeddedColor)) colors.push({ label: embeddedColor });
 
     result = mergeProductResults(result, {
       brand: result.brand ?? "Nike",
@@ -93,6 +94,10 @@ export async function extractNikeProduct(context: ExtractorContext) {
         method: "store-specific",
         storeSpecific: true,
       },
+    });
+    result = replaceVariants(result, {
+      colors: dedupeVariantOptions(colors),
+      sizes: dedupeVariantOptions(nikeSizeOptions(context.html)),
     });
   }
 

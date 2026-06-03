@@ -2,13 +2,18 @@ import type { ExtractorContext, ProductVariantOption } from "../types";
 import { extractGenericProduct } from "./generic";
 import {
   cleanText,
+  createBlockedResult,
   dedupeVariantOptions,
   finalizeResult,
   getUrlPathCode,
+  isBlockedPage,
+  isLikelyColorLabel,
+  isLikelySizeLabel,
   loadHtml,
   mergeProductResults,
   normalizeImageUrl,
   parsePrice,
+  replaceVariants,
   selectedParam,
 } from "../utils";
 
@@ -44,7 +49,9 @@ function adidasOptions(
       cleanText($element.find("img").attr("alt")) ??
       cleanText($element.attr("value")) ??
       cleanText($element.text());
-    if (!label || label.length > 80) return;
+    if (!label) return;
+    if (kind === "color" && !isLikelyColorLabel(label)) return;
+    if (kind === "size" && !isLikelySizeLabel(label)) return;
 
     options.push({
       label,
@@ -61,11 +68,21 @@ function adidasOptions(
 }
 
 export async function extractAdidasProduct(context: ExtractorContext) {
+  const productId = getUrlPathCode(context.normalized.url, /\/([A-Z0-9]+)\.html$/i);
+  if (context.html && isBlockedPage(context.html, context.fetchStatus)) {
+    return finalizeResult(
+      createBlockedResult(context, undefined, {
+        sku: productId,
+        productId,
+        brand: "adidas",
+      }),
+    );
+  }
+
   let result = await extractGenericProduct(context);
   result.extraction.storeSpecific = true;
   result.extraction.method = "store-specific";
 
-  const productId = getUrlPathCode(context.normalized.url, /\/([A-Z0-9]+)\.html$/i);
   result = mergeProductResults(result, {
     productId,
     sku: productId,
@@ -88,6 +105,10 @@ export async function extractAdidasProduct(context: ExtractorContext) {
         sizes: adidasOptions($, baseUrl, "size"),
       },
       extraction: { method: "store-specific", storeSpecific: true },
+    });
+    result = replaceVariants(result, {
+      colors: adidasOptions($, baseUrl, "color"),
+      sizes: adidasOptions($, baseUrl, "size"),
     });
   }
 

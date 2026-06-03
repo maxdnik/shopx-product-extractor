@@ -4,12 +4,29 @@ import {
   cleanText,
   dedupeVariantOptions,
   finalizeResult,
+  isLikelyColorLabel,
   loadHtml,
   mergeProductResults,
   normalizeImageUrl,
   parsePrice,
+  replaceVariants,
   selectedParam,
 } from "../utils";
+
+function normalizeGapColorLabel(label: string): string | undefined {
+  const cleaned = cleanText(label.replace(/^color/i, "").replace(/^selected\s+color/i, ""));
+  if (!cleaned || !isLikelyColorLabel(cleaned)) return undefined;
+  if (/extra \d+% off|product details|size guide/i.test(cleaned)) return undefined;
+  return cleaned;
+}
+
+function isGapSizeLabel(label: string): boolean {
+  const cleaned = cleanText(label);
+  if (!cleaned) return false;
+  return /^(?:regular|tall|petite|xxs|xs|s|m|l|xl|xxl|xxxl|[2-9][0-9](?:\s?x\s?[2-9][0-9])?)$/i.test(
+    cleaned,
+  );
+}
 
 function collectGapOptions(
   $: ReturnType<typeof loadHtml>,
@@ -31,11 +48,14 @@ function collectGapOptions(
       cleanText($element.attr("value")) ??
       cleanText($element.text());
     if (!label || label.length > 80) return;
-    if (kind === "size" && !/size|talle|regular|petite|tall|\b(xs|s|m|l|xl|xxl|\d+)\b/i.test(`${label} ${$element.parent().text()}`)) {
+    const normalizedLabel =
+      kind === "color" ? normalizeGapColorLabel(label) : cleanText(label);
+    if (!normalizedLabel) return;
+    if (kind === "size" && !isGapSizeLabel(normalizedLabel)) {
       return;
     }
     options.push({
-      label: label.replace(/^(color|size)[:\s-]*/i, ""),
+      label: normalizedLabel.replace(/^(color|size)[:\s-]*/i, ""),
       value: cleanText($element.attr("value") ?? $element.attr("data-value")),
       available: !/disabled|unavailable|sold/i.test(
         `${$element.attr("class") ?? ""} ${$element.attr("aria-disabled") ?? ""}`,
@@ -76,6 +96,10 @@ export async function extractGapProduct(context: ExtractorContext) {
         sizes: collectGapOptions($, baseUrl, "size"),
       },
       extraction: { method: "store-specific", storeSpecific: true },
+    });
+    result = replaceVariants(result, {
+      colors: collectGapOptions($, baseUrl, "color"),
+      sizes: collectGapOptions($, baseUrl, "size"),
     });
   }
 

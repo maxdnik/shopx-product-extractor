@@ -2,25 +2,41 @@ import type { ExtractorContext, ProductVariantOption } from "../types";
 import { extractGenericProduct } from "./generic";
 import {
   cleanText,
+  createBlockedResult,
   dedupeVariantOptions,
   finalizeResult,
   getUrlPathCode,
+  isBlockedPage,
+  isLikelyColorLabel,
+  isLikelySizeLabel,
   loadHtml,
   mergeProductResults,
   normalizeImageUrl,
   parsePrice,
+  replaceVariants,
   selectedParam,
 } from "../utils";
 
 export async function extractTheNorthFaceProduct(context: ExtractorContext) {
+  const productId = getUrlPathCode(context.normalized.url, /-([A-Z0-9]{6,})$/i);
+  const selectedColor = selectedParam(context.normalized.url, ["color", "dwvar"]);
+
+  if (context.html && isBlockedPage(context.html, context.fetchStatus)) {
+    return finalizeResult(
+      createBlockedResult(context, undefined, {
+        sku: productId,
+        productId,
+        brand: "The North Face",
+      }),
+    );
+  }
+
   let result = await extractGenericProduct(context);
   result.extraction.storeSpecific = true;
   result.extraction.method = "store-specific";
 
-  const productId = getUrlPathCode(context.normalized.url, /-([A-Z0-9]{6,})$/i);
-  const selectedColor = selectedParam(context.normalized.url, ["color", "dwvar"]);
-
   result = mergeProductResults(result, {
+    brand: "The North Face",
     productId,
     sku: productId,
     selectedColor,
@@ -41,7 +57,7 @@ export async function extractTheNorthFaceProduct(context: ExtractorContext) {
           cleanText($element.attr("title")) ??
           cleanText($element.find("img").attr("alt")) ??
           cleanText($element.text());
-        if (!label) return;
+        if (!label || !isLikelyColorLabel(label)) return;
         colors.push({
           label: label.replace(/^color[:\s-]*/i, ""),
           available: !/disabled|unavailable|not-available/i.test($element.attr("class") ?? ""),
@@ -60,7 +76,7 @@ export async function extractTheNorthFaceProduct(context: ExtractorContext) {
           cleanText($element.attr("aria-label")?.replace(/^(size|talle|tamaño)[:\s-]*/i, "")) ??
           cleanText($element.attr("value")) ??
           cleanText($element.text());
-        if (!label || label.length > 30) return;
+        if (!label || !isLikelySizeLabel(label)) return;
         sizes.push({
           label,
           available: !/disabled|unavailable|not-available/i.test($element.attr("class") ?? ""),
@@ -76,6 +92,11 @@ export async function extractTheNorthFaceProduct(context: ExtractorContext) {
         sizes: dedupeVariantOptions(sizes),
       },
       extraction: { method: "store-specific", storeSpecific: true },
+    });
+    result.brand = "The North Face";
+    result = replaceVariants(result, {
+      colors: dedupeVariantOptions(colors),
+      sizes: dedupeVariantOptions(sizes),
     });
   }
 

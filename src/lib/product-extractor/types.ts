@@ -49,6 +49,8 @@ export type ProductExtractionMetadata = {
 
 export type ProductExtractResult = {
   ok: boolean;
+  blocked?: boolean;
+  blockReason?: string;
   sourceUrl: string;
   normalizedUrl: string;
   store: string;

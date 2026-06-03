@@ -2,14 +2,20 @@ import type { ExtractorContext, ProductVariantOption } from "../types";
 import { extractGenericProduct } from "./generic";
 import {
   cleanText,
+  createBlockedResult,
   dedupeImages,
   dedupeVariantOptions,
   finalizeResult,
   getUrlPathCode,
+  isBlockedPage,
+  isLikelyNavigationVariantLabel,
   loadHtml,
   mergeProductResults,
   normalizeImageUrl,
+  parseCurrency,
   parsePrice,
+  replaceImages,
+  replaceVariants,
 } from "../utils";
 
 function extractAsin(url: URL): string | undefined {
@@ -22,14 +28,20 @@ function extractAsin(url: URL): string | undefined {
 function amazonImagesFromScripts(html: string, baseUrl: string): string[] {
   const candidates: string[] = [];
   for (const match of html.matchAll(/https?:\\?\/\\?\/[^"'\\]+?\.(?:jpg|jpeg|png|webp)(?:[^"'\\]*)?/gi)) {
-    candidates.push(match[0].replaceAll("\\/", "/").replaceAll("\\u002F", "/"));
+    const image = match[0].replaceAll("\\/", "/").replaceAll("\\u002F", "/");
+    if (/m\.media-amazon\.com\/images\/I\/|images-na\.ssl-images-amazon\.com\/images\/I\//i.test(image)) {
+      candidates.push(image);
+    }
   }
   return dedupeImages(candidates, baseUrl);
 }
 
-function amazonVariantOptions($: ReturnType<typeof loadHtml>, groupId: string): ProductVariantOption[] {
+function amazonVariantOptions(
+  $: ReturnType<typeof loadHtml>,
+  groupId: string,
+): ProductVariantOption[] {
   const options: ProductVariantOption[] = [];
-  $(`#${groupId} li, #${groupId} option, [data-csa-c-item-type*='variation']`).each(
+  $(`#${groupId} li, #${groupId} option`).each(
     (_, element) => {
       const $element = $(element);
       const label =
@@ -37,6 +49,7 @@ function amazonVariantOptions($: ReturnType<typeof loadHtml>, groupId: string): 
         cleanText($element.find(".selection, .a-size-base, img").attr("alt")) ??
         cleanText($element.text());
       if (!label || /select|currently unavailable/i.test(label)) return;
+      if (isLikelyNavigationVariantLabel(label)) return;
       options.push({
         label,
         value: cleanText($element.attr("data-defaultasin") ?? $element.attr("value")),
@@ -48,12 +61,69 @@ function amazonVariantOptions($: ReturnType<typeof loadHtml>, groupId: string): 
   return dedupeVariantOptions(options);
 }
 
+function parseDynamicImageUrls(value: string | undefined): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    return Object.keys(parsed);
+  } catch {
+    return [];
+  }
+}
+
+function amazonOfferJsonPrice(html: string): string | undefined {
+  const patterns = [
+    /"priceAmount"\s*:\s*([0-9]+(?:\.[0-9]+)?)/i,
+    /"displayPrice"\s*:\s*"([^"]*\$[^"]+)"/i,
+    /"price"\s*:\s*\{\s*"amount"\s*:\s*([0-9]+(?:\.[0-9]+)?)/i,
+    /"ourPrice"\s*:\s*"([^"]*\$[^"]+)"/i,
+  ];
+  for (const pattern of patterns) {
+    const value = cleanText(html.match(pattern)?.[1]);
+    if (value) return value;
+  }
+  return undefined;
+}
+
+function amazonPriceText($: ReturnType<typeof loadHtml>, html: string): string | undefined {
+  const selectors = [
+    "#corePrice_feature_div .a-price .a-offscreen",
+    "#apex_desktop .a-price .a-offscreen",
+    "#priceblock_ourprice",
+    "#priceblock_dealprice",
+    ".reinventPricePriceToPayMargin .a-offscreen",
+    "[data-a-color='price'] .a-offscreen",
+    "span.a-price span.a-offscreen",
+  ];
+  for (const selector of selectors) {
+    const values = $(selector)
+      .map((_, element) => cleanText($(element).text()))
+      .get()
+      .filter((value): value is string => Boolean(value) && /\$|USD|US\$/i.test(value));
+    const value = values.find((candidate) => {
+      const price = parsePrice(candidate);
+      return price !== undefined && price > 0 && price < 25_000;
+    });
+    if (value) return value;
+  }
+  return amazonOfferJsonPrice(html);
+}
+
 export async function extractAmazonProduct(context: ExtractorContext) {
+  const asin = extractAsin(context.normalized.url);
+  if (context.html && isBlockedPage(context.html, context.fetchStatus)) {
+    return finalizeResult(
+      createBlockedResult(context, undefined, {
+        sku: asin,
+        productId: asin,
+      }),
+    );
+  }
+
   let result = await extractGenericProduct(context);
   result.extraction.storeSpecific = true;
   result.extraction.method = "store-specific";
 
-  const asin = extractAsin(context.normalized.url);
   result = mergeProductResults(result, {
     sku: asin,
     productId: asin,
@@ -67,32 +137,29 @@ export async function extractAmazonProduct(context: ExtractorContext) {
       bodyText,
     );
     const baseUrl = context.finalUrl ?? context.normalized.normalizedUrl;
-    const dynamicImageAttr = $("#landingImage").attr("data-a-dynamic-image");
-    const dynamicImages = dynamicImageAttr
-      ? Object.keys(JSON.parse(dynamicImageAttr) as Record<string, unknown>)
-      : [];
+    const dynamicImages = parseDynamicImageUrls($("#landingImage").attr("data-a-dynamic-image"));
 
     const title = cleanText($("#productTitle").text());
-    const priceText =
-      cleanText($(".a-price .a-offscreen").first().text()) ??
-      cleanText($("#priceblock_ourprice, #priceblock_dealprice, #corePrice_feature_div").first().text());
+    const priceText = amazonPriceText($, context.html);
+    const price = parsePrice(priceText);
     const brand =
       cleanText($("#bylineInfo").text().replace(/^Visit the /i, "").replace(/ Store$/i, "")) ??
       cleanText($("tr:contains('Brand') td").last().text());
+    const productImages = dedupeImages(
+      [
+        $("#landingImage").attr("src"),
+        ...dynamicImages,
+        ...amazonImagesFromScripts(context.html, baseUrl),
+      ],
+      baseUrl,
+    );
 
     result = mergeProductResults(result, {
       title,
       brand,
-      price: parsePrice(priceText),
-      currency: priceText ? "USD" : undefined,
-      images: dedupeImages(
-        [
-          $("#landingImage").attr("src"),
-          ...dynamicImages,
-          ...amazonImagesFromScripts(context.html, baseUrl),
-        ],
-        baseUrl,
-      ),
+      price,
+      currency: parseCurrency(priceText),
+      images: productImages,
       variants: {
         colors: amazonVariantOptions($, "variation_color_name"),
         sizes: amazonVariantOptions($, "variation_size_name"),
@@ -113,6 +180,20 @@ export async function extractAmazonProduct(context: ExtractorContext) {
           ? ["Amazon returned a bot-protection or robot-check page; extraction may be limited"]
           : [],
       },
+    });
+    result.price = price && price < 25_000 ? price : undefined;
+    result.currency = result.price ? parseCurrency(priceText) ?? "USD" : undefined;
+    result = replaceImages(result, productImages);
+    result = replaceVariants(result, {
+      colors: amazonVariantOptions($, "variation_color_name"),
+      sizes: amazonVariantOptions($, "variation_size_name").filter(
+        (option) => !/zappos|shoes\s*&?\s*clothing/i.test(option.label),
+      ),
+      styles: amazonVariantOptions($, "variation_style_name"),
+      capacities: amazonVariantOptions($, "variation_size_name").filter((option) =>
+        /\b(?:gb|tb|pack|count)\b/i.test(option.label),
+      ),
+      raw: result.variants.raw,
     });
   }
 

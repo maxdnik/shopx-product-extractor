@@ -5,6 +5,7 @@ import type {
 } from "../types";
 import {
   createEmptyResult,
+  createBlockedResult,
   extractDomHeuristics,
   extractEmbeddedJsonCandidates,
   extractJsonLdProducts,
@@ -12,6 +13,7 @@ import {
   extractOpenGraph,
   extractProductDataFromEmbeddedJson,
   finalizeResult,
+  isBlockedPage,
   limitDebugData,
   loadHtml,
   mergeProductResults,
@@ -31,6 +33,10 @@ export async function extractGenericProduct(
 
   if (!context.html) {
     return finalizeResult(addMissingHtmlWarning(result));
+  }
+
+  if (isBlockedPage(context.html, context.fetchStatus)) {
+    return finalizeResult(createBlockedResult(context));
   }
 
   const $ = loadHtml(context.html);

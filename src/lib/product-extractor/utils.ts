@@ -34,6 +34,102 @@ export function cleanText(value: unknown): string | undefined {
   return normalized;
 }
 
+const BLOCKED_PAGE_PATTERNS = [
+  /access denied/i,
+  /unable to give you access/i,
+  /request (?:has been )?blocked/i,
+  /temporarily blocked/i,
+  /robot check/i,
+  /enter the characters you see below/i,
+  /captcha/i,
+  /akamai/i,
+  /perimeterx/i,
+];
+
+const NAVIGATION_VARIANT_LABEL_PATTERNS = [
+  /^help$/i,
+  /^details$/i,
+  /^product details$/i,
+  /^size guide$/i,
+  /^guide$/i,
+  /^shipping (?:&|and) returns$/i,
+  /^shipping$/i,
+  /^returns$/i,
+  /^reviews?$/i,
+  /^men'?s?$/i,
+  /^women'?s?$/i,
+  /^kids?$/i,
+  /^all shoes$/i,
+  /^basketball$/i,
+  /^running$/i,
+  /^soccer$/i,
+  /^training (?:&|and) gym$/i,
+  /^sandals (?:&|and) slides$/i,
+  /^lifestyle$/i,
+  /^jordan$/i,
+  /^father'?s day shoes$/i,
+  /^shop by color$/i,
+  /^extra \d+% off/i,
+  /^product details?size/i,
+  /fabric (?:&|and) care/i,
+  /add to bag/i,
+  /sign in/i,
+  /favorites?/i,
+  /zappos/i,
+];
+
+export function isBlockedPage(html = "", status?: number): boolean {
+  if ([401, 403, 429, 451, 503].includes(status ?? 0)) {
+    const lower = html.slice(0, 20_000).toLowerCase();
+    if (BLOCKED_PAGE_PATTERNS.some((pattern) => pattern.test(lower))) return true;
+  }
+  const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "";
+  const earlyText = `${title} ${html.slice(0, 15_000)}`;
+  return BLOCKED_PAGE_PATTERNS.some((pattern) => pattern.test(earlyText));
+}
+
+export function blockedPageReason(html = "", status?: number): string {
+  const title = cleanText(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]);
+  if (status) {
+    return title ? `HTTP ${status}: ${title}` : `HTTP ${status}: blocked response`;
+  }
+  return title ?? "Blocked response detected";
+}
+
+export function isLikelyNavigationVariantLabel(label: string): boolean {
+  const cleaned = cleanText(label);
+  if (!cleaned) return true;
+  if (cleaned.length > 64) return true;
+  if (NAVIGATION_VARIANT_LABEL_PATTERNS.some((pattern) => pattern.test(cleaned))) {
+    return true;
+  }
+  const lower = cleaned.toLowerCase();
+  if (
+    lower.includes("product details") ||
+    lower.includes("size guide") ||
+    lower.includes("shipping") ||
+    lower.includes("fabric & care")
+  ) {
+    return true;
+  }
+  return false;
+}
+
+export function isLikelySizeLabel(label: string): boolean {
+  const cleaned = cleanText(label);
+  if (!cleaned || isLikelyNavigationVariantLabel(cleaned)) return false;
+  return /^(?:xxxxs|xxxs|xxs|xs|s|m|l|xl|xxl|xxxl|xxxxl|one size|os|[0-9]{1,2}(?:\.[05])?|[0-9]{2,3}(?:w|l)?|[0-9]{1,2}\s?\/\s?[0-9]{1,2}|m\s?\d+(?:\.\d)?\s?\/\s?w\s?\d+(?:\.\d)?)$/i.test(
+    cleaned,
+  );
+}
+
+export function isLikelyColorLabel(label: string): boolean {
+  const cleaned = cleanText(label);
+  if (!cleaned || isLikelyNavigationVariantLabel(cleaned)) return false;
+  if (/\d+% off|size|guide|details|shipping|returns/i.test(cleaned)) return false;
+  return cleaned.length <= 60;
+}
+
 export function parsePrice(value: unknown): number | undefined {
   const text = cleanText(value);
   if (!text) return undefined;
@@ -115,6 +211,7 @@ export function dedupeVariantOptions(
   for (const option of options) {
     const label = cleanText(option?.label);
     if (!label) continue;
+    if (isLikelyNavigationVariantLabel(label)) continue;
     const key = `${label.toLowerCase()}|${option?.value ?? ""}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -627,6 +724,7 @@ export function extractDomHeuristics($: CheerioAPI, baseUrl: string): PartialPro
       cleanText($element.attr("value")) ??
       cleanText($element.text());
     if (!label || label.length > 80) return;
+    if (isLikelyNavigationVariantLabel(label)) return;
 
     const option: ProductVariantOption = {
       label,
@@ -641,9 +739,12 @@ export function extractDomHeuristics($: CheerioAPI, baseUrl: string): PartialPro
     };
 
     const variantContext = `${context} ${label}`.toLowerCase();
-    if (/colou?r|colorway|swatch|shade|tono|color/.test(variantContext)) {
+    if (/colou?r|colorway|swatch|shade|tono|color/.test(variantContext) && isLikelyColorLabel(label)) {
       colors.push(option);
-    } else if (/size|talle|tamaño|waist|inseam|shoe|calzado/.test(variantContext)) {
+    } else if (
+      /size|talle|tamaño|waist|inseam|shoe|calzado/.test(variantContext) &&
+      isLikelySizeLabel(label)
+    ) {
       sizes.push(option);
     } else if (/capacity|storage|\bgb\b|\btb\b|capacidad/.test(variantContext)) {
       capacities.push(option);
@@ -723,6 +824,71 @@ export function createEmptyResult(
       warnings: [...context.fetchWarnings, ...warnings],
     },
   };
+}
+
+export function createBlockedResult(
+  context: ExtractorContext,
+  reason = blockedPageReason(context.html, context.fetchStatus),
+  productIdentity: Pick<PartialProductData, "sku" | "productId" | "brand"> = {},
+): ProductExtractResult {
+  return {
+    ...createEmptyResult(context, [
+      `Blocked page detected: ${reason}`,
+      "Product extraction skipped because the response is an access-denied or bot-protection page",
+    ]),
+    blocked: true,
+    blockReason: reason,
+    ok: false,
+    sku: productIdentity.sku,
+    productId: productIdentity.productId,
+    brand: productIdentity.brand,
+    extraction: {
+      method: "fallback",
+      storeSpecific: context.normalized.store !== "generic",
+      warnings: dedupeStrings([
+        ...context.fetchWarnings,
+        `Blocked page detected: ${reason}`,
+        "Product extraction skipped because the response is an access-denied or bot-protection page",
+      ]),
+      debug: context.options.includeDebug
+        ? {
+            status: context.fetchStatus,
+            finalUrl: context.finalUrl,
+          }
+        : undefined,
+    },
+  };
+}
+
+export function replaceVariants(
+  result: ProductExtractResult,
+  variants: Partial<ProductVariants>,
+): ProductExtractResult {
+  const replaced: ProductExtractResult = {
+    ...result,
+    variants: {
+      colors: dedupeVariantOptions(variants.colors ?? []),
+      sizes: dedupeVariantOptions(variants.sizes ?? []),
+      capacities: dedupeVariantOptions(variants.capacities ?? []),
+      dimensions: dedupeVariantOptions(variants.dimensions ?? []),
+      styles: dedupeVariantOptions(variants.styles ?? []),
+      raw: variants.raw ?? result.variants.raw,
+    },
+  };
+  replaced.confidence = calculateConfidence(replaced);
+  return replaced;
+}
+
+export function replaceImages(
+  result: ProductExtractResult,
+  images: unknown[],
+): ProductExtractResult {
+  const replaced: ProductExtractResult = {
+    ...result,
+    images: dedupeImages(images, result.normalizedUrl),
+  };
+  replaced.confidence = calculateConfidence(replaced);
+  return replaced;
 }
 
 export function mergeProductResults(
@@ -871,9 +1037,13 @@ export function finalizeResult(result: ProductExtractResult): ProductExtractResu
     },
   };
   finalized.confidence = calculateConfidence(finalized);
-  finalized.ok = Boolean(finalized.title || finalized.price || finalized.images.length > 0);
+  finalized.ok = finalized.blocked
+    ? false
+    : Boolean(finalized.title || finalized.price || finalized.images.length > 0);
   if (!finalized.ok && !finalized.error) {
-    finalized.error = "Unable to extract product data from this URL";
+    finalized.error = finalized.blocked
+      ? "Product page is blocked by the remote store"
+      : "Unable to extract product data from this URL";
   }
   return finalized;
 }
