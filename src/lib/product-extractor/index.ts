@@ -124,7 +124,7 @@ export async function extractProduct(
     const extractor = extractorForStore(normalized.store);
     let result = await extractor(context);
 
-    if (result.confidence.overall < 0.7 || options.usePlaywright === true) {
+    if (!result.blocked && (result.confidence.overall < 0.7 || options.usePlaywright === true)) {
       const browserData = await extractWithPlaywright(context);
       result = mergeProductResults(result, browserData);
     }

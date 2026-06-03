@@ -5,6 +5,7 @@ import {
   dedupeVariantOptions,
   extractJsonLdProducts,
   extractOpenGraph,
+  isBlockedPage,
   loadHtml,
   parseCurrency,
   parsePrice,
@@ -37,9 +38,20 @@ describe("product extractor utils", () => {
       dedupeVariantOptions([
         { label: "Blue", value: "blue" },
         { label: " Blue ", value: "blue" },
+        { label: "Size Guide" },
+        { label: "Product Details" },
         { label: "Red" },
       ]),
     ).toHaveLength(2);
+  });
+
+  it("detects blocked access-denied pages", () => {
+    expect(
+      isBlockedPage(
+        "<html><title>adidas</title><body>Unfortunately we are unable to give you access to our site at this time.</body></html>",
+        403,
+      ),
+    ).toBe(true);
   });
 
   it("extracts JSON-LD Product metadata", () => {

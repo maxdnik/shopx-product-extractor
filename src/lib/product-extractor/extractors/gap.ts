@@ -28,6 +28,24 @@ function isGapSizeLabel(label: string): boolean {
   );
 }
 
+function splitGapAlphaSizes(text: string): ProductVariantOption[] {
+  const compact = text.replace(/\s+/g, "");
+  const match = compact.match(/Size(?:SizeGuide)?((?:XXXL|XXL|XXS|XL|XS|S|M|L){2,})/i);
+  const sequence = match?.[1];
+  if (!sequence) return [];
+
+  const options: ProductVariantOption[] = [];
+  let remaining = sequence.toUpperCase();
+  const tokens = ["XXXL", "XXL", "XXS", "XL", "XS", "S", "M", "L"];
+  while (remaining.length > 0) {
+    const token = tokens.find((candidate) => remaining.startsWith(candidate));
+    if (!token) break;
+    options.push({ label: token });
+    remaining = remaining.slice(token.length);
+  }
+  return options;
+}
+
 function collectGapOptions(
   $: ReturnType<typeof loadHtml>,
   baseUrl: string,
@@ -64,6 +82,11 @@ function collectGapOptions(
       url: normalizeImageUrl($element.attr("href"), baseUrl),
     });
   });
+
+  if (kind === "size") {
+    const bodyText = $("body").text();
+    options.push(...splitGapAlphaSizes(bodyText));
+  }
 
   return dedupeVariantOptions(options);
 }
