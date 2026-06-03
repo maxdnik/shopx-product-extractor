@@ -49,10 +49,45 @@ export type ProductExtractionMetadata = {
   debug?: unknown;
 };
 
+export type EvidenceSourceType =
+  | "jsonld"
+  | "product-json"
+  | "selector"
+  | "playwright"
+  | "api"
+  | "url"
+  | "fallback";
+
+export type FieldEvidence = {
+  field: string;
+  sourceType: EvidenceSourceType;
+  selector?: string;
+  jsonPath?: string;
+  rawValue?: unknown;
+  normalizedValue?: unknown;
+  accepted: boolean;
+  reason?: string;
+};
+
+export type VariantCandidateEvidence = FieldEvidence & {
+  label?: string;
+  kind?: "color" | "size" | "capacity" | "dimension" | "style";
+};
+
+export type ProductEvidenceDebug = {
+  titleCandidates: FieldEvidence[];
+  priceCandidates: FieldEvidence[];
+  imageCandidates: FieldEvidence[];
+  colorCandidates: VariantCandidateEvidence[];
+  sizeCandidates: VariantCandidateEvidence[];
+  rejectedCandidates: VariantCandidateEvidence[];
+};
+
 export type ProductExtractResult = {
   ok: boolean;
   blocked?: boolean;
   blockReason?: string;
+  partial?: boolean;
   sourceUrl: string;
   normalizedUrl: string;
   store: string;

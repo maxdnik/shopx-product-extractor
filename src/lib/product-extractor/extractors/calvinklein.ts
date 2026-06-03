@@ -1,9 +1,11 @@
-import type { ExtractorContext, ProductVariantOption } from "../types";
+import type { ExtractorContext, ProductEvidenceDebug, ProductVariantOption } from "../types";
 import { extractGenericProduct } from "./generic";
 import {
+  attachEvidence,
   cleanText,
   createBlockedResult,
   dedupeVariantOptions,
+  emptyEvidence,
   finalizeResult,
   getUrlPathCode,
   isBlockedPage,
@@ -33,17 +35,40 @@ function calvinKleinTitleFromUrl(url: URL): string | undefined {
 
 function isCalvinKleinVariantLabel(label: string, kind: "color" | "size"): boolean {
   const cleaned = cleanText(label);
-  if (!cleaned || /^(?:sale|clearance|new arrivals?)$/i.test(cleaned)) return false;
+  if (
+    !cleaned ||
+    /^(?:sale|clearance|new arrivals?|facebook|google|apple|paypal|klarna|afterpay|icon|shop|bag|laptop)$/i.test(
+      cleaned,
+    )
+  ) {
+    return false;
+  }
+  if (/(facebook|google|apple|paypal|klarna|afterpay|icon|laptop|sign in|account)/i.test(cleaned)) {
+    return false;
+  }
   return kind === "color" ? isLikelyColorLabel(cleaned) : isLikelySizeLabel(cleaned);
 }
 
 function sanitizeCalvinKleinOptions(
   options: ProductVariantOption[],
   kind: "color" | "size",
+  evidence?: ProductEvidenceDebug,
 ): ProductVariantOption[] {
-  return dedupeVariantOptions(
-    options.filter((option) => isCalvinKleinVariantLabel(option.label, kind)),
-  );
+  return dedupeVariantOptions(options.filter((option) => {
+    const accepted = isCalvinKleinVariantLabel(option.label, kind);
+    if (!accepted && evidence) {
+      evidence.rejectedCandidates.push({
+        field: kind === "color" ? "variants.colors" : "variants.sizes",
+        kind,
+        sourceType: option.url ? "selector" : "product-json",
+        label: option.label,
+        rawValue: option.label,
+        accepted: false,
+        reason: "Calvin Klein non-product variant candidate",
+      });
+    }
+    return accepted;
+  }));
 }
 
 function calvinKleinTextSizeOptions(text: string): ProductVariantOption[] {
@@ -99,6 +124,7 @@ function embeddedCalvinKleinOptions(
 }
 
 export async function extractCalvinKleinProduct(context: ExtractorContext) {
+  const evidence = emptyEvidence();
   const productId = calvinKleinProductId(context.normalized.url);
   const selectedColor = selectedParam(context.normalized.url, ["color", "dwvar"]);
   const urlTitle = calvinKleinTitleFromUrl(context.normalized.url);
@@ -144,7 +170,6 @@ export async function extractCalvinKleinProduct(context: ExtractorContext) {
         "button[class*='color' i]",
         "button[class*='swatch' i]",
         "a[href*='color']",
-        "img[alt]",
       ].join(","),
     ).each((_, element) => {
       const $element = $(element);
@@ -155,7 +180,29 @@ export async function extractCalvinKleinProduct(context: ExtractorContext) {
         cleanText($element.attr("alt")) ??
         cleanText($element.find("img").attr("alt")) ??
         cleanText($element.text());
-      if (!label || !isCalvinKleinVariantLabel(label, "color")) return;
+      if (!label || !isCalvinKleinVariantLabel(label, "color")) {
+        if (label) {
+          evidence.rejectedCandidates.push({
+            field: "variants.colors",
+            kind: "color",
+            sourceType: "selector",
+            rawValue: label,
+            label,
+            accepted: false,
+            reason: "not a Calvin Klein product color swatch",
+          });
+        }
+        return;
+      }
+      evidence.colorCandidates.push({
+        field: "variants.colors",
+        kind: "color",
+        sourceType: "selector",
+        rawValue: label,
+        normalizedValue: label.replace(/^color[:\s-]*/i, ""),
+        label,
+        accepted: true,
+      });
       colors.push({
         label: label.replace(/^color[:\s-]*/i, ""),
         available: !/disabled|unavailable|sold/i.test($element.attr("class") ?? ""),
@@ -172,6 +219,15 @@ export async function extractCalvinKleinProduct(context: ExtractorContext) {
           cleanText($element.attr("value")) ??
           cleanText($element.text());
         if (!label || !isCalvinKleinVariantLabel(label, "size")) return;
+        evidence.sizeCandidates.push({
+          field: "variants.sizes",
+          kind: "size",
+          sourceType: "selector",
+          rawValue: label,
+          normalizedValue: label,
+          label,
+          accepted: true,
+        });
         sizes.push({
           label,
           available: !/disabled|unavailable|sold/i.test(
@@ -203,10 +259,18 @@ export async function extractCalvinKleinProduct(context: ExtractorContext) {
       result.title = urlTitle;
     }
     result = replaceVariants(result, {
-      colors: sanitizeCalvinKleinOptions(colors, "color"),
-      sizes: sanitizeCalvinKleinOptions(sizes, "size"),
+      colors: sanitizeCalvinKleinOptions(colors, "color", evidence),
+      sizes: sanitizeCalvinKleinOptions(sizes, "size", evidence),
     });
+    if (result.variants.sizes.length === 0) {
+      result.partial = true;
+      result.extraction.warnings.push(
+        "Calvin Klein size variants unavailable from product-specific evidence",
+      );
+    }
   }
 
-  return finalizeResult(result);
+  return finalizeResult(
+    context.options.includeDebug ? attachEvidence(result, evidence) : result,
+  );
 }

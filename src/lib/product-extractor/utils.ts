@@ -6,6 +6,7 @@ import type {
   FetchHtmlResult,
   JsonObject,
   PartialProductData,
+  ProductEvidenceDebug,
   ProductConfidence,
   ProductExtractResult,
   ProductVariantOption,
@@ -131,6 +132,58 @@ export function isLikelyColorLabel(label: string): boolean {
   if (!cleaned || isLikelyNavigationVariantLabel(cleaned)) return false;
   if (/\d+% off|size|guide|details|shipping|returns/i.test(cleaned)) return false;
   return cleaned.length <= 60;
+}
+
+export function emptyEvidence(): ProductEvidenceDebug {
+  return {
+    titleCandidates: [],
+    priceCandidates: [],
+    imageCandidates: [],
+    colorCandidates: [],
+    sizeCandidates: [],
+    rejectedCandidates: [],
+  };
+}
+
+export function mergeEvidence(
+  ...items: Array<Partial<ProductEvidenceDebug> | undefined>
+): ProductEvidenceDebug {
+  const merged = emptyEvidence();
+  for (const item of items) {
+    if (!item) continue;
+    merged.titleCandidates.push(...(item.titleCandidates ?? []));
+    merged.priceCandidates.push(...(item.priceCandidates ?? []));
+    merged.imageCandidates.push(...(item.imageCandidates ?? []));
+    merged.colorCandidates.push(...(item.colorCandidates ?? []));
+    merged.sizeCandidates.push(...(item.sizeCandidates ?? []));
+    merged.rejectedCandidates.push(...(item.rejectedCandidates ?? []));
+  }
+  return merged;
+}
+
+export function attachEvidence(
+  result: ProductExtractResult,
+  evidence: Partial<ProductEvidenceDebug>,
+): ProductExtractResult {
+  const existing =
+    typeof result.extraction.debug === "object" &&
+    result.extraction.debug !== null &&
+    "evidence" in result.extraction.debug
+      ? (result.extraction.debug as { evidence?: Partial<ProductEvidenceDebug> }).evidence
+      : undefined;
+
+  return {
+    ...result,
+    extraction: {
+      ...result.extraction,
+      debug: {
+        ...(typeof result.extraction.debug === "object" && result.extraction.debug !== null
+          ? result.extraction.debug
+          : {}),
+        evidence: mergeEvidence(existing, evidence),
+      },
+    },
+  };
 }
 
 export function parsePrice(value: unknown): number | undefined {
@@ -1068,12 +1121,14 @@ export function finalizeResult(result: ProductExtractResult): ProductExtractResu
     },
   };
   finalized.confidence = calculateConfidence(finalized);
-  finalized.ok = finalized.blocked
+  finalized.ok = finalized.blocked || finalized.partial
     ? false
     : Boolean(finalized.title || finalized.price || finalized.images.length > 0);
   if (!finalized.ok && !finalized.error) {
     finalized.error = finalized.blocked
       ? "Product page is blocked by the remote store"
+      : finalized.partial
+        ? "Partial extraction: required product data is unavailable"
       : "Unable to extract product data from this URL";
   }
   return finalized;

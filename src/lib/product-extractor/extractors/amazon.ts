@@ -1,10 +1,12 @@
-import type { ExtractorContext, ProductVariantOption } from "../types";
+import type { ExtractorContext, FieldEvidence, ProductVariantOption } from "../types";
 import { extractGenericProduct } from "./generic";
 import {
+  attachEvidence,
   cleanText,
   createBlockedResult,
   dedupeImages,
   dedupeVariantOptions,
+  emptyEvidence,
   fetchHtml,
   finalizeResult,
   getUrlPathCode,
@@ -101,6 +103,87 @@ function amazonOfferJsonPrice(html: string): string | undefined {
 
 function isReasonableAmazonPrice(price: number | undefined): price is number {
   return price !== undefined && price > 0 && price < 10_000;
+}
+
+function evidenceForAmazonPrice(
+  rawValue: unknown,
+  sourceType: FieldEvidence["sourceType"],
+  source: Pick<FieldEvidence, "selector" | "jsonPath" | "reason"> = {},
+): FieldEvidence {
+  const normalizedValue = parsePrice(rawValue);
+  const accepted = isReasonableAmazonPrice(normalizedValue);
+  return {
+    field: "price",
+    sourceType,
+    rawValue,
+    normalizedValue,
+    accepted,
+    ...source,
+    reason: source.reason ?? (accepted ? undefined : "missing or unreasonable Amazon price"),
+  };
+}
+
+function amazonPriceEvidence($: ReturnType<typeof loadHtml>, html: string): FieldEvidence[] {
+  const evidence: FieldEvidence[] = [];
+  const normalizedHtml = html
+    .replace(/&quot;/g, '"')
+    .replace(/\\"/g, '"')
+    .replace(/&#36;/g, "$")
+    .replace(/&amp;/g, "&");
+
+  const jsonPatterns: Array<[RegExp, string]> = [
+    [/"displayString"\s*:\s*"([^"]*\$[^"]+)"/gi, "$..displayString"],
+    [/"amount"\s*:\s*([0-9]+(?:\.[0-9]+)?)[\s\S]{0,120}?"currencyCode"\s*:\s*"USD"/gi, "$..amount"],
+    [/"priceAmount"\s*:\s*([0-9]+(?:\.[0-9]+)?)/gi, "$..priceAmount"],
+    [/"displayPrice"\s*:\s*"([^"]*\$[^"]+)"/gi, "$..displayPrice"],
+  ];
+  for (const [pattern, jsonPath] of jsonPatterns) {
+    for (const match of normalizedHtml.matchAll(pattern)) {
+      evidence.push(evidenceForAmazonPrice(match[1], "product-json", { jsonPath }));
+      if (evidence.length > 30) break;
+    }
+  }
+
+  const selectors = [
+    "#corePriceDisplay_desktop_feature_div .a-price .a-offscreen",
+    "#corePriceDisplay_mobile_feature_div .a-price .a-offscreen",
+    "#corePrice_feature_div .a-price .a-offscreen",
+    "#apex_desktop .a-price .a-offscreen",
+    "#priceblock_ourprice",
+    "#priceblock_dealprice",
+    ".reinventPricePriceToPayMargin .a-offscreen",
+    "[data-a-color='price'] .a-offscreen",
+    "span.a-price span.a-offscreen",
+  ];
+  for (const selector of selectors) {
+    $(selector).each((_, element) => {
+      evidence.push(
+        evidenceForAmazonPrice($(element).text(), "selector", {
+          selector,
+        }),
+      );
+    });
+  }
+
+  const wholeFraction = amazonPriceFromWholeFraction($);
+  if (wholeFraction) {
+    evidence.push(
+      evidenceForAmazonPrice(wholeFraction, "selector", {
+        selector: ".a-price-whole + .a-price-fraction",
+      }),
+    );
+  }
+
+  const scored = amazonBestScoredPrice(html);
+  if (scored) {
+    evidence.push(
+      evidenceForAmazonPrice(scored, "fallback", {
+        reason: "scored dollar candidate from Amazon price context",
+      }),
+    );
+  }
+
+  return evidence;
 }
 
 function amazonPriceFromWholeFraction($: ReturnType<typeof loadHtml>): string | undefined {
@@ -214,7 +297,51 @@ async function amazonPriceFromAlternatePages(
   return undefined;
 }
 
+async function amazonPriceWithPlaywright(url: string): Promise<FieldEvidence | undefined> {
+  if (process.env.PRODUCT_EXTRACTOR_DISABLE_AUTO_PLAYWRIGHT === "true") return undefined;
+
+  let browser: Awaited<ReturnType<typeof import("playwright").chromium.launch>> | undefined;
+  try {
+    const { chromium } = await import("playwright");
+    browser = await chromium.launch({ headless: true, timeout: 12_000 });
+    const page = await browser.newPage({
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+      locale: "en-US",
+      viewport: { width: 1280, height: 900 },
+    });
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15_000 });
+    await page.waitForSelector(
+      "#corePriceDisplay_desktop_feature_div .a-price .a-offscreen, #corePriceDisplay_mobile_feature_div .a-price .a-offscreen, #corePrice_feature_div .a-price .a-offscreen, #apex_desktop .a-price .a-offscreen, .a-price .a-offscreen",
+      { timeout: 8_000 },
+    ).catch(() => undefined);
+    const rawValue = await page
+      .locator(
+        "#corePriceDisplay_desktop_feature_div .a-price .a-offscreen, #corePriceDisplay_mobile_feature_div .a-price .a-offscreen, #corePrice_feature_div .a-price .a-offscreen, #apex_desktop .a-price .a-offscreen, .a-price .a-offscreen",
+      )
+      .first()
+      .textContent({ timeout: 2_000 })
+      .catch(() => undefined);
+    if (!rawValue) return undefined;
+    const evidence = evidenceForAmazonPrice(rawValue, "playwright", {
+      selector: ".a-price .a-offscreen",
+    });
+    return evidence.accepted ? evidence : undefined;
+  } catch (error) {
+    return {
+      field: "price",
+      sourceType: "playwright",
+      accepted: false,
+      reason: error instanceof Error ? error.message : "Playwright price extraction failed",
+    };
+  } finally {
+    await browser?.close().catch(() => undefined);
+  }
+}
+
 export async function extractAmazonProduct(context: ExtractorContext) {
+  const evidence = emptyEvidence();
   const asin = extractAsin(context.normalized.url);
   if (context.html && isBlockedPage(context.html, context.fetchStatus)) {
     return finalizeResult(
@@ -245,10 +372,33 @@ export async function extractAmazonProduct(context: ExtractorContext) {
     const dynamicImages = parseDynamicImageUrls($("#landingImage").attr("data-a-dynamic-image"));
 
     const title = cleanText($("#productTitle").text());
-    const priceText =
+    if (title) {
+      evidence.titleCandidates.push({
+        field: "title",
+        sourceType: "selector",
+        selector: "#productTitle",
+        rawValue: title,
+        normalizedValue: title,
+        accepted: true,
+      });
+    }
+    evidence.priceCandidates.push(...amazonPriceEvidence($, context.html));
+    const acceptedPriceEvidence = evidence.priceCandidates.find((candidate) => candidate.accepted);
+    let priceText =
+      cleanText(acceptedPriceEvidence?.rawValue) ??
       amazonPriceText($, context.html) ??
       (await amazonPriceFromAlternatePages(asin, context.normalized.url));
-    const price = parsePrice(priceText);
+    let price = parsePrice(priceText);
+    if (!isReasonableAmazonPrice(price)) {
+      const playwrightEvidence = await amazonPriceWithPlaywright(context.normalized.normalizedUrl);
+      if (playwrightEvidence) {
+        evidence.priceCandidates.push(playwrightEvidence);
+        if (playwrightEvidence.accepted) {
+          priceText = cleanText(playwrightEvidence.rawValue);
+          price = parsePrice(playwrightEvidence.rawValue);
+        }
+      }
+    }
     const brand =
       cleanText($("#bylineInfo").text().replace(/^Visit the /i, "").replace(/ Store$/i, "")) ??
       cleanText($("tr:contains('Brand') td").last().text());
@@ -311,5 +461,7 @@ export async function extractAmazonProduct(context: ExtractorContext) {
     result.extraction.warnings.push("Amazon title not found; page may be blocked or rendered dynamically");
   }
 
-  return finalizeResult(result);
+  return finalizeResult(
+    context.options.includeDebug ? attachEvidence(result, evidence) : result,
+  );
 }

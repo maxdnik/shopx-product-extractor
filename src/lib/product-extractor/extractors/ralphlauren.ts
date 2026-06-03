@@ -1,9 +1,11 @@
-import type { ExtractorContext, ProductVariantOption } from "../types";
+import type { ExtractorContext, ProductEvidenceDebug, ProductVariantOption } from "../types";
 import { extractGenericProduct } from "./generic";
 import {
+  attachEvidence,
   cleanText,
   createBlockedResult,
   dedupeVariantOptions,
+  emptyEvidence,
   finalizeResult,
   getUrlPathCode,
   isBlockedPage,
@@ -26,17 +28,40 @@ function ralphProductId(url: URL): string | undefined {
 
 function isRalphVariantLabel(label: string, kind: "color" | "size"): boolean {
   const cleaned = cleanText(label);
-  if (!cleaned || /^(?:sale|clearance|new arrivals?)$/i.test(cleaned)) return false;
+  if (
+    !cleaned ||
+    /^(?:sale|clearance|new arrivals?|facebook|google|apple|paypal|klarna|afterpay|icon|shop|bag|laptop)$/i.test(
+      cleaned,
+    )
+  ) {
+    return false;
+  }
+  if (/(facebook|google|apple|paypal|klarna|afterpay|icon|laptop|sign in|account)/i.test(cleaned)) {
+    return false;
+  }
   return kind === "color" ? isLikelyColorLabel(cleaned) : isLikelySizeLabel(cleaned);
 }
 
 function sanitizeRalphOptions(
   options: ProductVariantOption[],
   kind: "color" | "size",
+  evidence?: ProductEvidenceDebug,
 ): ProductVariantOption[] {
-  return dedupeVariantOptions(
-    options.filter((option) => isRalphVariantLabel(option.label, kind)),
-  );
+  return dedupeVariantOptions(options.filter((option) => {
+    const accepted = isRalphVariantLabel(option.label, kind);
+    if (!accepted && evidence) {
+      evidence.rejectedCandidates.push({
+        field: kind === "color" ? "variants.colors" : "variants.sizes",
+        kind,
+        sourceType: option.url ? "selector" : "product-json",
+        label: option.label,
+        rawValue: option.label,
+        accepted: false,
+        reason: "Ralph Lauren non-product variant candidate",
+      });
+    }
+    return accepted;
+  }));
 }
 
 function embeddedRalphOptions(html: string, kind: "color" | "size"): ProductVariantOption[] {
@@ -66,6 +91,7 @@ function embeddedRalphOptions(html: string, kind: "color" | "size"): ProductVari
 }
 
 export async function extractRalphLaurenProduct(context: ExtractorContext) {
+  const evidence = emptyEvidence();
   const productId = ralphProductId(context.normalized.url);
   const selectedColor = selectedParam(context.normalized.url, [
     "userSelectedColor",
@@ -115,7 +141,6 @@ export async function extractRalphLaurenProduct(context: ExtractorContext) {
         "button[class*='color' i]",
         "button[class*='swatch' i]",
         "a[href*='color']",
-        "img[alt]",
       ].join(","),
     ).each((_, element) => {
       const $element = $(element);
@@ -126,7 +151,29 @@ export async function extractRalphLaurenProduct(context: ExtractorContext) {
         cleanText($element.attr("alt")) ??
         cleanText($element.find("img").attr("alt")) ??
         cleanText($element.text());
-      if (!label || !isRalphVariantLabel(label, "color")) return;
+      if (!label || !isRalphVariantLabel(label, "color")) {
+        if (label) {
+          evidence.rejectedCandidates.push({
+            field: "variants.colors",
+            kind: "color",
+            sourceType: "selector",
+            rawValue: label,
+            label,
+            accepted: false,
+            reason: "not a Ralph Lauren product color swatch",
+          });
+        }
+        return;
+      }
+      evidence.colorCandidates.push({
+        field: "variants.colors",
+        kind: "color",
+        sourceType: "selector",
+        rawValue: label,
+        normalizedValue: label.replace(/^color[:\s-]*/i, ""),
+        label,
+        accepted: true,
+      });
       colors.push({
         label: label.replace(/^color[:\s-]*/i, ""),
         available: !/disabled|unavailable|sold/i.test($element.attr("class") ?? ""),
@@ -143,6 +190,15 @@ export async function extractRalphLaurenProduct(context: ExtractorContext) {
           cleanText($element.attr("value")) ??
           cleanText($element.text());
         if (!label || !isRalphVariantLabel(label, "size")) return;
+        evidence.sizeCandidates.push({
+          field: "variants.sizes",
+          kind: "size",
+          sourceType: "selector",
+          rawValue: label,
+          normalizedValue: label,
+          label,
+          accepted: true,
+        });
         sizes.push({
           label,
           available: !/disabled|unavailable|sold/i.test(
@@ -165,10 +221,12 @@ export async function extractRalphLaurenProduct(context: ExtractorContext) {
     });
     result.brand = "Ralph Lauren";
     result = replaceVariants(result, {
-      colors: sanitizeRalphOptions(colors, "color"),
-      sizes: sanitizeRalphOptions(sizes, "size"),
+      colors: sanitizeRalphOptions(colors, "color", evidence),
+      sizes: sanitizeRalphOptions(sizes, "size", evidence),
     });
   }
 
-  return finalizeResult(result);
+  return finalizeResult(
+    context.options.includeDebug ? attachEvidence(result, evidence) : result,
+  );
 }
