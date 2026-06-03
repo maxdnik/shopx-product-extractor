@@ -4,6 +4,8 @@ import { extractGapProduct } from "./extractors/gap";
 import { extractGenericProduct } from "./extractors/generic";
 import { extractGucciProduct } from "./extractors/gucci";
 import { extractNikeProduct } from "./extractors/nike";
+import { extractRalphLaurenProduct } from "./extractors/ralphlauren";
+import { extractCalvinKleinProduct } from "./extractors/calvinklein";
 import { extractTheNorthFaceProduct } from "./extractors/thenorthface";
 import { normalizeProductUrl } from "./normalize-url";
 import { extractWithPlaywright } from "./playwright";
@@ -33,6 +35,10 @@ function extractorForStore(store: StoreId): ProductExtractor {
       return extractAmazonProduct;
     case "thenorthface":
       return extractTheNorthFaceProduct;
+    case "ralphlauren":
+      return extractRalphLaurenProduct;
+    case "calvinklein":
+      return extractCalvinKleinProduct;
     case "gap":
       return extractGapProduct;
     case "gucci":

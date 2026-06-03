@@ -34,6 +34,8 @@ describe("detectStore", () => {
     ["nike.com", "nike"],
     ["www.amazon.com", "amazon"],
     ["www.thenorthface.com", "thenorthface"],
+    ["www.ralphlauren.com", "ralphlauren"],
+    ["www.calvinklein.us", "calvinklein"],
     ["gap.com", "gap"],
     ["gucci.com", "gucci"],
     ["adidas.com", "adidas"],

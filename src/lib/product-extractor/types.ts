@@ -10,6 +10,8 @@ export type StoreId =
   | "nike"
   | "amazon"
   | "thenorthface"
+  | "ralphlauren"
+  | "calvinklein"
   | "gap"
   | "gucci"
   | "adidas"

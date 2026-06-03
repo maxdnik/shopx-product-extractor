@@ -73,19 +73,49 @@ function parseDynamicImageUrls(value: string | undefined): string[] {
 
 function amazonOfferJsonPrice(html: string): string | undefined {
   const patterns = [
+    /"priceToPay"\s*:\s*\{[\s\S]{0,600}?"displayString"\s*:\s*"([^"]*\$[^"]+)"/i,
+    /"basisPrice"\s*:\s*\{[\s\S]{0,600}?"displayString"\s*:\s*"([^"]*\$[^"]+)"/i,
     /"priceAmount"\s*:\s*([0-9]+(?:\.[0-9]+)?)/i,
     /"displayPrice"\s*:\s*"([^"]*\$[^"]+)"/i,
     /"price"\s*:\s*\{\s*"amount"\s*:\s*([0-9]+(?:\.[0-9]+)?)/i,
     /"ourPrice"\s*:\s*"([^"]*\$[^"]+)"/i,
+    /"price"\s*:\s*"(\$[0-9,]+(?:\.[0-9]{2})?)"/i,
   ];
   for (const pattern of patterns) {
     const value = cleanText(html.match(pattern)?.[1]);
-    if (value) return value;
+    const price = parsePrice(value);
+    if (value && price !== undefined && isReasonableAmazonPrice(price)) return value;
+  }
+  return undefined;
+}
+
+function isReasonableAmazonPrice(price: number | undefined): price is number {
+  return price !== undefined && price > 0 && price < 10_000;
+}
+
+function amazonPriceFromWholeFraction($: ReturnType<typeof loadHtml>): string | undefined {
+  const containers = [
+    "#corePrice_feature_div",
+    "#apex_desktop",
+    "#tp_price_block_total_price_ww",
+    "#newAccordionRow",
+  ];
+  for (const selector of containers) {
+    const container = $(selector).first();
+    if (container.length === 0) continue;
+    const whole = cleanText(container.find(".a-price-whole").first().text());
+    const fraction = cleanText(container.find(".a-price-fraction").first().text());
+    if (!whole) continue;
+    const candidate = `$${whole.replace(/[^\d,]/g, "")}.${(fraction ?? "00").replace(/[^\d]/g, "").padEnd(2, "0").slice(0, 2)}`;
+    if (isReasonableAmazonPrice(parsePrice(candidate))) return candidate;
   }
   return undefined;
 }
 
 function amazonPriceText($: ReturnType<typeof loadHtml>, html: string): string | undefined {
+  const offerJsonPrice = amazonOfferJsonPrice(html);
+  if (offerJsonPrice) return offerJsonPrice;
+
   const selectors = [
     "#corePrice_feature_div .a-price .a-offscreen",
     "#apex_desktop .a-price .a-offscreen",
@@ -102,11 +132,11 @@ function amazonPriceText($: ReturnType<typeof loadHtml>, html: string): string |
       .filter((value): value is string => Boolean(value) && /\$|USD|US\$/i.test(value));
     const value = values.find((candidate) => {
       const price = parsePrice(candidate);
-      return price !== undefined && price > 0 && price < 25_000;
+      return isReasonableAmazonPrice(price);
     });
     if (value) return value;
   }
-  return amazonOfferJsonPrice(html);
+  return amazonPriceFromWholeFraction($);
 }
 
 export async function extractAmazonProduct(context: ExtractorContext) {
@@ -181,7 +211,7 @@ export async function extractAmazonProduct(context: ExtractorContext) {
           : [],
       },
     });
-    result.price = price && price < 25_000 ? price : undefined;
+    result.price = isReasonableAmazonPrice(price) ? price : undefined;
     result.currency = result.price ? parseCurrency(priceText) ?? "USD" : undefined;
     result = replaceImages(result, productImages);
     result = replaceVariants(result, {

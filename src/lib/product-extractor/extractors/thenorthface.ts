@@ -17,6 +17,33 @@ import {
   selectedParam,
 } from "../utils";
 
+function tnfEmbeddedOptions(html: string, kind: "color" | "size"): ProductVariantOption[] {
+  const options: ProductVariantOption[] = [];
+  const patterns =
+    kind === "color"
+      ? [
+          /"color(?:Name|Description)?"\s*:\s*"([^"]{2,60})"/gi,
+          /"displayValue"\s*:\s*"([^"]{2,60})"[\s\S]{0,300}?"id"\s*:\s*"color"/gi,
+          /"attributeId"\s*:\s*"color"[\s\S]{0,300}?"displayValue"\s*:\s*"([^"]{2,60})"/gi,
+        ]
+      : [
+          /"size(?:Name)?"\s*:\s*"([^"]{1,20})"/gi,
+          /"displayValue"\s*:\s*"([^"]{1,20})"[\s\S]{0,300}?"id"\s*:\s*"size"/gi,
+          /"attributeId"\s*:\s*"size"[\s\S]{0,300}?"displayValue"\s*:\s*"([^"]{1,20})"/gi,
+        ];
+
+  for (const pattern of patterns) {
+    for (const match of html.matchAll(pattern)) {
+      const label = cleanText(match[1]);
+      if (!label) continue;
+      if (kind === "color" && !isLikelyColorLabel(label)) continue;
+      if (kind === "size" && !isLikelySizeLabel(label)) continue;
+      options.push({ label });
+    }
+  }
+  return dedupeVariantOptions(options);
+}
+
 export async function extractTheNorthFaceProduct(context: ExtractorContext) {
   const productId = getUrlPathCode(context.normalized.url, /-([A-Z0-9]{6,})$/i);
   const selectedColor = selectedParam(context.normalized.url, ["color", "dwvar"]);
@@ -67,6 +94,8 @@ export async function extractTheNorthFaceProduct(context: ExtractorContext) {
       },
     );
 
+    colors.push(...tnfEmbeddedOptions(context.html, "color"));
+
     $("[data-attr='size'], [data-attribute='size'], [aria-label*='size' i], button").each(
       (_, element) => {
         const $element = $(element);
@@ -83,6 +112,8 @@ export async function extractTheNorthFaceProduct(context: ExtractorContext) {
         });
       },
     );
+
+    sizes.push(...tnfEmbeddedOptions(context.html, "size"));
 
     result = mergeProductResults(result, {
       price: result.price ?? parsePrice($("[class*='price' i], [data-test*='price' i]").first().text()),

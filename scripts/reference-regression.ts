@@ -101,16 +101,28 @@ const references: ReferenceCase[] = [
   {
     name: "tnf-nuptse",
     store: "thenorthface",
-    mode: "blocked",
+    mode: "product-or-diagnostic",
     expectedBlockedBrand: "The North Face",
     url: "https://www.thenorthface.com/en-us/p/mens/mens-jackets-and-vests/mens-insulated-and-down-300771/mens-1996-retro-nuptse-jacket-NF0A3C8D?utm_source=chatgpt.com",
+    titleIncludes: "Nuptse",
+    brandIncludes: "The North Face",
+    price: { min: 50, max: 1000 },
+    minImages: 2,
+    minColors: 1,
+    minSizes: 1,
   },
   {
     name: "tnf-jaida",
     store: "thenorthface",
-    mode: "blocked",
+    mode: "product-or-diagnostic",
     expectedBlockedBrand: "The North Face",
     url: "https://www.thenorthface.com/en-us/p/womens/womens-tops/womens-active-tops-224263/womens-jaida-full-zip-hooded-jacket-NF0A8G8K?color=FM2",
+    titleIncludes: "Jaida",
+    brandIncludes: "The North Face",
+    price: { min: 20, max: 500 },
+    minImages: 2,
+    minColors: 1,
+    minSizes: 1,
   },
   {
     name: "gap-tshirt",
@@ -201,21 +213,27 @@ const references: ReferenceCase[] = [
   },
   {
     name: "ralph-polo",
-    store: "generic",
+    store: "ralphlauren",
     mode: "product-or-diagnostic",
+    expectedBlockedBrand: "Ralph Lauren",
     url: "https://www.ralphlauren.com/men-clothing-polo-shirts/soft-cotton-polo-shirt---all-fits/401482-P.html?masterId=401482&userSelectedColor=Refined%20Navy",
     titleIncludes: "Polo",
     brandIncludes: "Ralph",
     minImages: 1,
+    minColors: 1,
+    minSizes: 1,
   },
   {
     name: "ralph-linen",
-    store: "generic",
+    store: "ralphlauren",
     mode: "product-or-diagnostic",
+    expectedBlockedBrand: "Ralph Lauren",
     url: "https://www.ralphlauren.com/women-clothing-shirts-blouses/classic-fit-linen-shirt/100044088.html?dwvar100044088_colorname=Classic%20Oxford%20White&cgid=women-clothing-shirts-blouses#ab=NA_WLP_Slot_2_S2_Image_SHOP&start=1&cgid=women-clothing-shirts-blouses",
     titleIncludes: "Linen",
     brandIncludes: "Ralph",
     minImages: 1,
+    minColors: 1,
+    minSizes: 1,
   },
   {
     name: "levis-501",
@@ -237,21 +255,27 @@ const references: ReferenceCase[] = [
   },
   {
     name: "ck-boxer",
-    store: "generic",
+    store: "calvinklein",
     mode: "product-or-diagnostic",
+    expectedBlockedBrand: "Calvin Klein",
     url: "https://www.calvinklein.us/en/underwear/men/mens-boxers/cotton-classics-3-pack-knit-boxer/NB4005-001.html?journey=Folder_0000101",
     titleIncludes: "Boxer",
     brandIncludes: "Calvin",
     minImages: 1,
+    minColors: 1,
+    minSizes: 1,
   },
   {
     name: "ck-jacket",
-    store: "generic",
+    store: "calvinklein",
     mode: "product-or-diagnostic",
+    expectedBlockedBrand: "Calvin Klein",
     url: "https://www.calvinklein.us/en/women/apparel/womens-outerwear/quilted-liner-jacket/44G506G-PAS.html?journey=Tier_0000002",
     titleIncludes: "Jacket",
     brandIncludes: "Calvin",
     minImages: 1,
+    minColors: 1,
+    minSizes: 1,
   },
   {
     name: "backcountry-board",
@@ -345,6 +369,7 @@ function assertNoBlockedTitle(reference: ReferenceCase, result: ProductExtractRe
 }
 
 function assertDiagnostic(reference: ReferenceCase, result: ProductExtractResult) {
+  assert(result.store === reference.store, `${reference.name}: expected store ${reference.store}, got ${result.store}`);
   assert(!result.ok, `${reference.name}: diagnostic cases must not return ok=true`);
   assertNoBlockedTitle(reference, result);
   assertNoForbiddenVariants(reference, result);
@@ -352,6 +377,12 @@ function assertDiagnostic(reference: ReferenceCase, result: ProductExtractResult
     result.blocked || Boolean(result.error) || result.extraction.warnings.length > 0,
     `${reference.name}: diagnostic output must include blocked/error/warnings`,
   );
+  if (result.blocked && reference.expectedBlockedBrand) {
+    assert(
+      result.brand === reference.expectedBlockedBrand,
+      `${reference.name}: expected blocked brand ${reference.expectedBlockedBrand}, got ${result.brand}`,
+    );
+  }
 }
 
 function assertProduct(reference: ReferenceCase, result: ProductExtractResult) {

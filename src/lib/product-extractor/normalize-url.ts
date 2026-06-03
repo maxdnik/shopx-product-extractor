@@ -82,6 +82,12 @@ export function detectStore(domain: string): StoreId {
   if (host === "thenorthface.com" || host.endsWith(".thenorthface.com")) {
     return "thenorthface";
   }
+  if (host === "ralphlauren.com" || host.endsWith(".ralphlauren.com")) {
+    return "ralphlauren";
+  }
+  if (host === "calvinklein.us" || host.endsWith(".calvinklein.us")) {
+    return "calvinklein";
+  }
   if (host === "gap.com" || host.endsWith(".gap.com")) return "gap";
   if (host === "gucci.com" || host.endsWith(".gucci.com")) return "gucci";
   if (host === "adidas.com" || host.endsWith(".adidas.com")) return "adidas";
