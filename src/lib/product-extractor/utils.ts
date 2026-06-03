@@ -1012,12 +1012,14 @@ export function finalizeResult(result: ProductExtractResult): ProductExtractResu
   const warnings = result.extraction.warnings.filter(
     (warning) => !staleMissingWarnings.has(warning),
   );
-  if (!result.title) warnings.push("Title not found");
-  if (!result.price) warnings.push("Price not found");
-  if (!result.currency && result.price) warnings.push("Currency not found for extracted price");
-  if (result.images.length === 0) warnings.push("Images not found");
-  if (result.variants.colors.length === 0) warnings.push("Color variants not found");
-  if (result.variants.sizes.length === 0) warnings.push("Size variants not found");
+  if (!result.blocked) {
+    if (!result.title) warnings.push("Title not found");
+    if (!result.price) warnings.push("Price not found");
+    if (!result.currency && result.price) warnings.push("Currency not found for extracted price");
+    if (result.images.length === 0) warnings.push("Images not found");
+    if (result.variants.colors.length === 0) warnings.push("Color variants not found");
+    if (result.variants.sizes.length === 0) warnings.push("Size variants not found");
+  }
 
   const finalized: ProductExtractResult = {
     ...result,
