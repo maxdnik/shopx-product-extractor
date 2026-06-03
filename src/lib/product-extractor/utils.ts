@@ -79,7 +79,10 @@ const NAVIGATION_VARIANT_LABEL_PATTERNS = [
 ];
 
 export function isBlockedPage(html = "", status?: number): boolean {
-  if ([401, 403, 429, 451, 503].includes(status ?? 0)) {
+  if ([401, 403, 429, 451].includes(status ?? 0)) {
+    return true;
+  }
+  if (status === 503) {
     const lower = html.slice(0, 20_000).toLowerCase();
     if (BLOCKED_PAGE_PATTERNS.some((pattern) => pattern.test(lower))) return true;
   }
