@@ -978,6 +978,20 @@ export function dedupeStrings(values: string[]): string[] {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
 
+function filterOptionsAgainstTitle(
+  options: ProductVariantOption[],
+  title?: string,
+): ProductVariantOption[] {
+  const normalizedTitle = cleanText(title)?.toLowerCase();
+  return options.filter((option) => {
+    const label = cleanText(option.label)?.toLowerCase();
+    if (!label || !normalizedTitle) return true;
+    if (label.length >= 16 && normalizedTitle.includes(label)) return false;
+    if (normalizedTitle.length >= 16 && label.includes(normalizedTitle)) return false;
+    return true;
+  });
+}
+
 export function limitDebugData(value: unknown, maxLength = 16_000): unknown {
   const seen = new WeakSet<object>();
   const replacer = (_key: string, current: unknown): unknown => {
@@ -1028,11 +1042,23 @@ export function finalizeResult(result: ProductExtractResult): ProductExtractResu
     ...result,
     images: dedupeImages(result.images, result.normalizedUrl),
     variants: {
-      colors: dedupeVariantOptions(result.variants.colors),
-      sizes: dedupeVariantOptions(result.variants.sizes),
-      capacities: dedupeVariantOptions(result.variants.capacities ?? []),
-      dimensions: dedupeVariantOptions(result.variants.dimensions ?? []),
-      styles: dedupeVariantOptions(result.variants.styles ?? []),
+      colors: filterOptionsAgainstTitle(
+        dedupeVariantOptions(result.variants.colors),
+        result.title,
+      ),
+      sizes: filterOptionsAgainstTitle(dedupeVariantOptions(result.variants.sizes), result.title),
+      capacities: filterOptionsAgainstTitle(
+        dedupeVariantOptions(result.variants.capacities ?? []),
+        result.title,
+      ),
+      dimensions: filterOptionsAgainstTitle(
+        dedupeVariantOptions(result.variants.dimensions ?? []),
+        result.title,
+      ),
+      styles: filterOptionsAgainstTitle(
+        dedupeVariantOptions(result.variants.styles ?? []),
+        result.title,
+      ),
       raw: result.variants.raw,
     },
     extraction: {
