@@ -73,6 +73,11 @@ function parseDynamicImageUrls(value: string | undefined): string[] {
 }
 
 function amazonOfferJsonPrice(html: string): string | undefined {
+  const normalizedHtml = html
+    .replace(/&quot;/g, '"')
+    .replace(/\\"/g, '"')
+    .replace(/&#36;/g, "$")
+    .replace(/&amp;/g, "&");
   const patterns = [
     /"displayString"\s*:\s*"([^"]*\$[^"]+)"/i,
     /"amount"\s*:\s*([0-9]+(?:\.[0-9]+)?)[\s\S]{0,120}?"currencyCode"\s*:\s*"USD"/i,
@@ -84,9 +89,10 @@ function amazonOfferJsonPrice(html: string): string | undefined {
     /"price"\s*:\s*\{\s*"amount"\s*:\s*([0-9]+(?:\.[0-9]+)?)/i,
     /"ourPrice"\s*:\s*"([^"]*\$[^"]+)"/i,
     /"price"\s*:\s*"(\$[0-9,]+(?:\.[0-9]{2})?)"/i,
+    /a-offscreen">\s*(\$[0-9,]+(?:\.[0-9]{2})?)\s*<\/span>[\s\S]{0,300}?a-price-whole/i,
   ];
   for (const pattern of patterns) {
-    const value = cleanText(html.match(pattern)?.[1]);
+    const value = cleanText(normalizedHtml.match(pattern)?.[1]);
     const price = parsePrice(value);
     if (value && price !== undefined && isReasonableAmazonPrice(price)) return value;
   }
@@ -140,7 +146,50 @@ function amazonPriceText($: ReturnType<typeof loadHtml>, html: string): string |
     });
     if (value) return value;
   }
-  return amazonPriceFromWholeFraction($);
+  return amazonPriceFromWholeFraction($) ?? amazonBestScoredPrice(html);
+}
+
+function amazonBestScoredPrice(html: string): string | undefined {
+  const normalizedHtml = html
+    .replace(/&quot;/g, '"')
+    .replace(/\\"/g, '"')
+    .replace(/&#36;/g, "$")
+    .replace(/&amp;/g, "&");
+  const candidates = new Map<string, { count: number; score: number }>();
+  const pricePattern = /\$\s?([1-9]\d{0,3}(?:,\d{3})*(?:\.\d{2})?)/g;
+
+  for (const match of normalizedHtml.matchAll(pricePattern)) {
+    const raw = `$${match[1]}`;
+    const price = parsePrice(raw);
+    if (!isReasonableAmazonPrice(price) || price < 15) continue;
+
+    const index = match.index ?? 0;
+    const context = normalizedHtml.slice(Math.max(0, index - 400), index + 400);
+    let score = 1;
+    if (/priceToPay|corePrice|apex_desktop|displayPrice|priceAmount|a-price|offer/i.test(context)) {
+      score += 8;
+    }
+    if (/coupon|saving|shipping|delivery|protector|warranty|bundle|was:|list price/i.test(context)) {
+      score -= 4;
+    }
+    if (/buy new|add to cart|add to basket/i.test(context)) {
+      score += 2;
+    }
+
+    const key = `$${price.toFixed(2)}`;
+    const current = candidates.get(key) ?? { count: 0, score: 0 };
+    current.count += 1;
+    current.score += score;
+    candidates.set(key, current);
+  }
+
+  return Array.from(candidates.entries())
+    .map(([value, stats]) => ({
+      value,
+      score: stats.score + stats.count * 2,
+      price: parsePrice(value) ?? 0,
+    }))
+    .sort((left, right) => right.score - left.score || right.price - left.price)[0]?.value;
 }
 
 async function amazonPriceFromAlternatePages(

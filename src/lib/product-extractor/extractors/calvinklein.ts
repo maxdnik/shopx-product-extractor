@@ -33,8 +33,39 @@ function calvinKleinTitleFromUrl(url: URL): string | undefined {
 
 function isCalvinKleinVariantLabel(label: string, kind: "color" | "size"): boolean {
   const cleaned = cleanText(label);
-  if (!cleaned || /^sale$/i.test(cleaned)) return false;
+  if (!cleaned || /^(?:sale|clearance|new arrivals?)$/i.test(cleaned)) return false;
   return kind === "color" ? isLikelyColorLabel(cleaned) : isLikelySizeLabel(cleaned);
+}
+
+function sanitizeCalvinKleinOptions(
+  options: ProductVariantOption[],
+  kind: "color" | "size",
+): ProductVariantOption[] {
+  return dedupeVariantOptions(
+    options.filter((option) => isCalvinKleinVariantLabel(option.label, kind)),
+  );
+}
+
+function calvinKleinTextSizeOptions(text: string): ProductVariantOption[] {
+  const options: ProductVariantOption[] = [];
+  const sections = [
+    text.match(/(?:Select\s+)?Size\s*([\s\S]{0,500}?)(?:Size Guide|Color|Add to Bag|Add To Cart|Product Details)/i)?.[1],
+    text.match(/Sizes?\s*:\s*([\s\S]{0,160}?)(?:\.|Color|$)/i)?.[1],
+  ].filter((value): value is string => Boolean(value));
+
+  for (const section of sections) {
+    for (const match of section.matchAll(/\b(?:XS|S|M|L|XL|XXL|XXXL|OS|One Size)\b/gi)) {
+      const label = cleanText(match[0].toUpperCase());
+      if (label && isCalvinKleinVariantLabel(label, "size")) options.push({ label });
+    }
+  }
+
+  for (const match of text.matchAll(/(?:XS|S|M|L|XL|XXL|XXXL)(?=Out of Stock|In Stock|Unavailable|Few Left|Low Stock)/gi)) {
+    const label = cleanText(match[0].toUpperCase());
+    if (label && isCalvinKleinVariantLabel(label, "size")) options.push({ label });
+  }
+
+  return sanitizeCalvinKleinOptions(options, "size");
 }
 
 function embeddedCalvinKleinOptions(
@@ -152,6 +183,7 @@ export async function extractCalvinKleinProduct(context: ExtractorContext) {
 
     colors.push(...embeddedCalvinKleinOptions(context.html, "color"));
     sizes.push(...embeddedCalvinKleinOptions(context.html, "size"));
+    sizes.push(...calvinKleinTextSizeOptions($("body").text()));
 
     result = mergeProductResults(result, {
       brand: "Calvin Klein",
@@ -171,8 +203,8 @@ export async function extractCalvinKleinProduct(context: ExtractorContext) {
       result.title = urlTitle;
     }
     result = replaceVariants(result, {
-      colors: dedupeVariantOptions(colors),
-      sizes: dedupeVariantOptions(sizes),
+      colors: sanitizeCalvinKleinOptions(colors, "color"),
+      sizes: sanitizeCalvinKleinOptions(sizes, "size"),
     });
   }
 

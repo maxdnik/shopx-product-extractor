@@ -49,13 +49,19 @@ function tnfTextSizeOptions(text: string): ProductVariantOption[] {
   const sections = [
     text.match(/Size:\s*([\s\S]{0,500}?)(?:Fit:|Size\s*&\s*Fit|Description|Add to Cart)/i)?.[1],
     text.match(/\*\s*Sizes\s*([\s\S]{0,120}?)(?:\*|Center Back|$)/i)?.[1],
+    text.match(/Sizes\s+((?:XXS|XS|S|M|L|XL|XXL|3XL|XXXL|,|\s){6,80})/i)?.[1],
   ].filter((value): value is string => Boolean(value));
 
   for (const section of sections) {
-    for (const match of section.matchAll(/\b(?:XXS|XS|S|M|L|XL|XXL|3XL|XXXL)\b/gi)) {
+    for (const match of section.matchAll(/(?:XXS|XS|S|M|L|XL|XXL|3XL|XXXL)(?=\b|Out of Stock|In Stock|Unavailable|Few Left|Low Stock)/gi)) {
       const label = cleanText(match[0].toUpperCase().replace("3XL", "XXXL"));
       if (label && isLikelySizeLabel(label)) options.push({ label });
     }
+  }
+
+  for (const match of text.matchAll(/(?:XXS|XS|S|M|L|XL|XXL|3XL|XXXL)(?=Out of Stock|In Stock|Unavailable|Few Left|Low Stock)/gi)) {
+    const label = cleanText(match[0].toUpperCase().replace("3XL", "XXXL"));
+    if (label && isLikelySizeLabel(label)) options.push({ label });
   }
 
   return dedupeVariantOptions(options);

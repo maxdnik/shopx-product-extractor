@@ -26,8 +26,17 @@ function ralphProductId(url: URL): string | undefined {
 
 function isRalphVariantLabel(label: string, kind: "color" | "size"): boolean {
   const cleaned = cleanText(label);
-  if (!cleaned || /^sale$/i.test(cleaned)) return false;
+  if (!cleaned || /^(?:sale|clearance|new arrivals?)$/i.test(cleaned)) return false;
   return kind === "color" ? isLikelyColorLabel(cleaned) : isLikelySizeLabel(cleaned);
+}
+
+function sanitizeRalphOptions(
+  options: ProductVariantOption[],
+  kind: "color" | "size",
+): ProductVariantOption[] {
+  return dedupeVariantOptions(
+    options.filter((option) => isRalphVariantLabel(option.label, kind)),
+  );
 }
 
 function embeddedRalphOptions(html: string, kind: "color" | "size"): ProductVariantOption[] {
@@ -156,8 +165,8 @@ export async function extractRalphLaurenProduct(context: ExtractorContext) {
     });
     result.brand = "Ralph Lauren";
     result = replaceVariants(result, {
-      colors: dedupeVariantOptions(colors),
-      sizes: dedupeVariantOptions(sizes),
+      colors: sanitizeRalphOptions(colors, "color"),
+      sizes: sanitizeRalphOptions(sizes, "size"),
     });
   }
 
