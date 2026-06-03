@@ -12,7 +12,7 @@ import type {
   ProductVariants,
 } from "./types";
 
-const DEFAULT_TIMEOUT_MS = 12_000;
+const DEFAULT_TIMEOUT_MS = 18_000;
 const MAX_HTML_CHARS = 5_000_000;
 const MAX_RECURSION_DEPTH = 8;
 
@@ -825,14 +825,27 @@ export function limitDebugData(value: unknown, maxLength = 16_000): unknown {
   try {
     const json = JSON.stringify(value, replacer);
     if (json.length <= maxLength) return JSON.parse(json) as unknown;
-    return JSON.parse(`${json.slice(0, maxLength - 20)}"…truncated"}`) as unknown;
+    return {
+      truncated: true,
+      preview: json.slice(0, maxLength),
+    };
   } catch {
     return undefined;
   }
 }
 
 export function finalizeResult(result: ProductExtractResult): ProductExtractResult {
-  const warnings = [...result.extraction.warnings];
+  const staleMissingWarnings = new Set([
+    "Title not found",
+    "Price not found",
+    "Currency not found for extracted price",
+    "Images not found",
+    "Color variants not found",
+    "Size variants not found",
+  ]);
+  const warnings = result.extraction.warnings.filter(
+    (warning) => !staleMissingWarnings.has(warning),
+  );
   if (!result.title) warnings.push("Title not found");
   if (!result.price) warnings.push("Price not found");
   if (!result.currency && result.price) warnings.push("Currency not found for extracted price");

@@ -43,6 +43,10 @@ export async function extractNikeProduct(context: ExtractorContext) {
     selectedColor: selectedParam(context.normalized.url, ["color", "colorway"]),
     extraction: { method: "store-specific", storeSpecific: true },
   });
+  if (productCode) {
+    result.sku = productCode;
+    result.productId = productCode;
+  }
 
   if (context.html) {
     const $ = loadHtml(context.html);

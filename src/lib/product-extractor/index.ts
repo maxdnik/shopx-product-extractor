@@ -97,7 +97,7 @@ export async function extractProduct(
   if (!html && options.fetchHtml !== false) {
     const fetched = await fetchHtml(
       normalized.normalizedUrl,
-      options.timeoutMs ?? Number(process.env.PRODUCT_EXTRACTOR_TIMEOUT_MS ?? 12_000),
+      options.timeoutMs ?? Number(process.env.PRODUCT_EXTRACTOR_TIMEOUT_MS ?? 18_000),
     );
     html = fetched.html;
     finalUrl = fetched.finalUrl;
