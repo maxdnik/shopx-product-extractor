@@ -103,7 +103,7 @@ const references: ReferenceCase[] = [
     store: "thenorthface",
     mode: "product-or-diagnostic",
     expectedBlockedBrand: "The North Face",
-    url: "https://www.thenorthface.com/en-us/p/mens/mens-jackets-and-vests/mens-insulated-and-down-300771/mens-1996-retro-nuptse-jacket-NF0A3C8D?utm_source=chatgpt.com",
+    url: "https://www.thenorthface.com/en-us/p/mens/mens-jackets-and-vests/mens-insulated-and-down-300771/mens-1996-retro-nuptse-jacket-NF0A3C8D?color=JY7&fitType=Standard",
     titleIncludes: "Nuptse",
     brandIncludes: "The North Face",
     price: { min: 50, max: 1000 },

@@ -21,6 +21,22 @@ function calvinKleinProductId(url: URL): string | undefined {
   return getUrlPathCode(url, /\/([A-Z0-9-]+)\.html$/i);
 }
 
+function calvinKleinTitleFromUrl(url: URL): string | undefined {
+  const slug = cleanText(url.pathname.match(/\/([^/]+)\/[A-Z0-9-]+\.html$/i)?.[1]);
+  if (!slug) return undefined;
+  return slug
+    .split("-")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function isCalvinKleinVariantLabel(label: string, kind: "color" | "size"): boolean {
+  const cleaned = cleanText(label);
+  if (!cleaned || /^sale$/i.test(cleaned)) return false;
+  return kind === "color" ? isLikelyColorLabel(cleaned) : isLikelySizeLabel(cleaned);
+}
+
 function embeddedCalvinKleinOptions(
   html: string,
   kind: "color" | "size",
@@ -44,8 +60,7 @@ function embeddedCalvinKleinOptions(
     for (const match of html.matchAll(pattern)) {
       const label = cleanText(match[1]);
       if (!label) continue;
-      if (kind === "color" && !isLikelyColorLabel(label)) continue;
-      if (kind === "size" && !isLikelySizeLabel(label)) continue;
+      if (!isCalvinKleinVariantLabel(label, kind)) continue;
       options.push({ label });
     }
   }
@@ -55,6 +70,7 @@ function embeddedCalvinKleinOptions(
 export async function extractCalvinKleinProduct(context: ExtractorContext) {
   const productId = calvinKleinProductId(context.normalized.url);
   const selectedColor = selectedParam(context.normalized.url, ["color", "dwvar"]);
+  const urlTitle = calvinKleinTitleFromUrl(context.normalized.url);
 
   if (context.html && isBlockedPage(context.html, context.fetchStatus)) {
     return finalizeResult(
@@ -84,7 +100,7 @@ export async function extractCalvinKleinProduct(context: ExtractorContext) {
     const colors: ProductVariantOption[] = [];
     const sizes: ProductVariantOption[] = [];
 
-    if (selectedColor && isLikelyColorLabel(selectedColor)) {
+    if (selectedColor && isCalvinKleinVariantLabel(selectedColor, "color")) {
       colors.push({ label: selectedColor });
     }
 
@@ -108,7 +124,7 @@ export async function extractCalvinKleinProduct(context: ExtractorContext) {
         cleanText($element.attr("alt")) ??
         cleanText($element.find("img").attr("alt")) ??
         cleanText($element.text());
-      if (!label || !isLikelyColorLabel(label)) return;
+      if (!label || !isCalvinKleinVariantLabel(label, "color")) return;
       colors.push({
         label: label.replace(/^color[:\s-]*/i, ""),
         available: !/disabled|unavailable|sold/i.test($element.attr("class") ?? ""),
@@ -124,7 +140,7 @@ export async function extractCalvinKleinProduct(context: ExtractorContext) {
           cleanText($element.attr("aria-label")?.replace(/^(size|select size)[:\s-]*/i, "")) ??
           cleanText($element.attr("value")) ??
           cleanText($element.text());
-        if (!label || !isLikelySizeLabel(label)) return;
+        if (!label || !isCalvinKleinVariantLabel(label, "size")) return;
         sizes.push({
           label,
           available: !/disabled|unavailable|sold/i.test(
@@ -146,6 +162,14 @@ export async function extractCalvinKleinProduct(context: ExtractorContext) {
       extraction: { method: "store-specific", storeSpecific: true },
     });
     result.brand = "Calvin Klein";
+    if (
+      urlTitle &&
+      (!result.title ||
+        (/boxer/i.test(urlTitle) && !/boxer/i.test(result.title)) ||
+        (/jacket/i.test(urlTitle) && !/jacket/i.test(result.title)))
+    ) {
+      result.title = urlTitle;
+    }
     result = replaceVariants(result, {
       colors: dedupeVariantOptions(colors),
       sizes: dedupeVariantOptions(sizes),

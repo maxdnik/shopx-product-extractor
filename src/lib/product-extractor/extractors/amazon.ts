@@ -5,6 +5,7 @@ import {
   createBlockedResult,
   dedupeImages,
   dedupeVariantOptions,
+  fetchHtml,
   finalizeResult,
   getUrlPathCode,
   isBlockedPage,
@@ -73,6 +74,9 @@ function parseDynamicImageUrls(value: string | undefined): string[] {
 
 function amazonOfferJsonPrice(html: string): string | undefined {
   const patterns = [
+    /"displayString"\s*:\s*"([^"]*\$[^"]+)"/i,
+    /"amount"\s*:\s*([0-9]+(?:\.[0-9]+)?)[\s\S]{0,120}?"currencyCode"\s*:\s*"USD"/i,
+    /"currencyCode"\s*:\s*"USD"[\s\S]{0,120}?"amount"\s*:\s*([0-9]+(?:\.[0-9]+)?)/i,
     /"priceToPay"\s*:\s*\{[\s\S]{0,600}?"displayString"\s*:\s*"([^"]*\$[^"]+)"/i,
     /"basisPrice"\s*:\s*\{[\s\S]{0,600}?"displayString"\s*:\s*"([^"]*\$[^"]+)"/i,
     /"priceAmount"\s*:\s*([0-9]+(?:\.[0-9]+)?)/i,
@@ -139,6 +143,28 @@ function amazonPriceText($: ReturnType<typeof loadHtml>, html: string): string |
   return amazonPriceFromWholeFraction($);
 }
 
+async function amazonPriceFromAlternatePages(
+  asin: string | undefined,
+  currentUrl: URL,
+): Promise<string | undefined> {
+  if (!asin) return undefined;
+
+  const candidateUrls = [
+    `https://${currentUrl.hostname}/dp/${asin}?th=1&psc=1`,
+    `https://${currentUrl.hostname}/gp/aw/d/${asin}?th=1&psc=1`,
+  ];
+
+  for (const candidateUrl of candidateUrls) {
+    if (candidateUrl === currentUrl.toString()) continue;
+    const fetched = await fetchHtml(candidateUrl, 8_000);
+    if (!fetched.html || isBlockedPage(fetched.html, fetched.status)) continue;
+    const priceText = amazonPriceText(loadHtml(fetched.html), fetched.html);
+    if (isReasonableAmazonPrice(parsePrice(priceText))) return priceText;
+  }
+
+  return undefined;
+}
+
 export async function extractAmazonProduct(context: ExtractorContext) {
   const asin = extractAsin(context.normalized.url);
   if (context.html && isBlockedPage(context.html, context.fetchStatus)) {
@@ -170,7 +196,9 @@ export async function extractAmazonProduct(context: ExtractorContext) {
     const dynamicImages = parseDynamicImageUrls($("#landingImage").attr("data-a-dynamic-image"));
 
     const title = cleanText($("#productTitle").text());
-    const priceText = amazonPriceText($, context.html);
+    const priceText =
+      amazonPriceText($, context.html) ??
+      (await amazonPriceFromAlternatePages(asin, context.normalized.url));
     const price = parsePrice(priceText);
     const brand =
       cleanText($("#bylineInfo").text().replace(/^Visit the /i, "").replace(/ Store$/i, "")) ??

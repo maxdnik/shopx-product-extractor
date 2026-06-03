@@ -44,6 +44,23 @@ function tnfEmbeddedOptions(html: string, kind: "color" | "size"): ProductVarian
   return dedupeVariantOptions(options);
 }
 
+function tnfTextSizeOptions(text: string): ProductVariantOption[] {
+  const options: ProductVariantOption[] = [];
+  const sections = [
+    text.match(/Size:\s*([\s\S]{0,500}?)(?:Fit:|Size\s*&\s*Fit|Description|Add to Cart)/i)?.[1],
+    text.match(/\*\s*Sizes\s*([\s\S]{0,120}?)(?:\*|Center Back|$)/i)?.[1],
+  ].filter((value): value is string => Boolean(value));
+
+  for (const section of sections) {
+    for (const match of section.matchAll(/\b(?:XXS|XS|S|M|L|XL|XXL|3XL|XXXL)\b/gi)) {
+      const label = cleanText(match[0].toUpperCase().replace("3XL", "XXXL"));
+      if (label && isLikelySizeLabel(label)) options.push({ label });
+    }
+  }
+
+  return dedupeVariantOptions(options);
+}
+
 export async function extractTheNorthFaceProduct(context: ExtractorContext) {
   const productId = getUrlPathCode(context.normalized.url, /-([A-Z0-9]{6,})$/i);
   const selectedColor = selectedParam(context.normalized.url, ["color", "dwvar"]);
@@ -114,6 +131,7 @@ export async function extractTheNorthFaceProduct(context: ExtractorContext) {
     );
 
     sizes.push(...tnfEmbeddedOptions(context.html, "size"));
+    sizes.push(...tnfTextSizeOptions($("body").text()));
 
     result = mergeProductResults(result, {
       price: result.price ?? parsePrice($("[class*='price' i], [data-test*='price' i]").first().text()),

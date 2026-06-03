@@ -24,6 +24,12 @@ function ralphProductId(url: URL): string | undefined {
   );
 }
 
+function isRalphVariantLabel(label: string, kind: "color" | "size"): boolean {
+  const cleaned = cleanText(label);
+  if (!cleaned || /^sale$/i.test(cleaned)) return false;
+  return kind === "color" ? isLikelyColorLabel(cleaned) : isLikelySizeLabel(cleaned);
+}
+
 function embeddedRalphOptions(html: string, kind: "color" | "size"): ProductVariantOption[] {
   const options: ProductVariantOption[] = [];
   const patterns =
@@ -43,8 +49,7 @@ function embeddedRalphOptions(html: string, kind: "color" | "size"): ProductVari
     for (const match of html.matchAll(pattern)) {
       const label = cleanText(match[1]);
       if (!label) continue;
-      if (kind === "color" && !isLikelyColorLabel(label)) continue;
-      if (kind === "size" && !isLikelySizeLabel(label)) continue;
+      if (!isRalphVariantLabel(label, kind)) continue;
       options.push({ label });
     }
   }
@@ -88,7 +93,7 @@ export async function extractRalphLaurenProduct(context: ExtractorContext) {
     const colors: ProductVariantOption[] = [];
     const sizes: ProductVariantOption[] = [];
 
-    if (selectedColor && isLikelyColorLabel(selectedColor)) {
+    if (selectedColor && isRalphVariantLabel(selectedColor, "color")) {
       colors.push({ label: selectedColor });
     }
 
@@ -112,7 +117,7 @@ export async function extractRalphLaurenProduct(context: ExtractorContext) {
         cleanText($element.attr("alt")) ??
         cleanText($element.find("img").attr("alt")) ??
         cleanText($element.text());
-      if (!label || !isLikelyColorLabel(label)) return;
+      if (!label || !isRalphVariantLabel(label, "color")) return;
       colors.push({
         label: label.replace(/^color[:\s-]*/i, ""),
         available: !/disabled|unavailable|sold/i.test($element.attr("class") ?? ""),
@@ -128,7 +133,7 @@ export async function extractRalphLaurenProduct(context: ExtractorContext) {
           cleanText($element.attr("aria-label")?.replace(/^(size|select size)[:\s-]*/i, "")) ??
           cleanText($element.attr("value")) ??
           cleanText($element.text());
-        if (!label || !isLikelySizeLabel(label)) return;
+        if (!label || !isRalphVariantLabel(label, "size")) return;
         sizes.push({
           label,
           available: !/disabled|unavailable|sold/i.test(
