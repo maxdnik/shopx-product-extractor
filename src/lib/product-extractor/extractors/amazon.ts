@@ -108,10 +108,10 @@ function isReasonableAmazonPrice(price: number | undefined): price is number {
 function evidenceForAmazonPrice(
   rawValue: unknown,
   sourceType: FieldEvidence["sourceType"],
-  source: Pick<FieldEvidence, "selector" | "jsonPath" | "reason"> = {},
+  source: Pick<FieldEvidence, "selector" | "jsonPath" | "reason" | "confidence"> = {},
 ): FieldEvidence {
   const normalizedValue = parsePrice(rawValue);
-  const accepted = isReasonableAmazonPrice(normalizedValue);
+  const accepted = isReasonableAmazonPrice(normalizedValue) && (source.confidence ?? 0) > 0;
   return {
     field: "price",
     sourceType,
@@ -123,7 +123,49 @@ function evidenceForAmazonPrice(
   };
 }
 
-function amazonPriceEvidence($: ReturnType<typeof loadHtml>, html: string): FieldEvidence[] {
+function amazonPriceContextScore(
+  context: string,
+  base: number,
+  asin?: string,
+): { confidence: number; reason?: string } {
+  const lower = context.toLowerCase();
+  let confidence = base;
+  const rejectPatterns: Array<[RegExp, string]> = [
+    [/monthly|\/mo|per month|month payment|installment|financing|apr|affirm/i, "financing/monthly payment"],
+    [/coupon|subscribe|save \d+|savings|promotion|promo/i, "coupon or promotional amount"],
+    [/shipping|delivery|import fees|tax|gift wrap/i, "shipping/tax/fee amount"],
+    [/warranty|protection plan|protector|case|charger|adapter|accessory/i, "accessory or warranty price"],
+    [/sponsored|recommend|customers also|similar item|carousel|comparison|desktop_unified/i, "recommendation/comparison price"],
+    [/list price|was:|strike|basisPrice|data-a-strike/i, "strike/list/reference price"],
+  ];
+  for (const [pattern, reason] of rejectPatterns) {
+    if (pattern.test(lower)) return { confidence: 0, reason };
+  }
+
+  if (/priceToPay|corePrice|corepricedisplay|apex_desktop|buybox|newAccordionRow/i.test(context)) {
+    confidence += 45;
+  }
+  if (/displayPrice|priceAmount|offerListing|twister-plus-buying-options-price-data/i.test(context)) {
+    confidence += 30;
+  }
+  if (/a-price|a-offscreen|priceblock_ourprice|priceblock_dealprice/i.test(context)) {
+    confidence += 25;
+  }
+  if (/add to cart|buy now|ships from|sold by/i.test(context)) {
+    confidence += 10;
+  }
+  if (asin && context.includes(asin)) {
+    confidence += 20;
+  }
+
+  return { confidence: Math.min(confidence, 100) };
+}
+
+function amazonPriceEvidence(
+  $: ReturnType<typeof loadHtml>,
+  html: string,
+  asin?: string,
+): FieldEvidence[] {
   const evidence: FieldEvidence[] = [];
   const normalizedHtml = html
     .replace(/&quot;/g, '"')
@@ -139,7 +181,20 @@ function amazonPriceEvidence($: ReturnType<typeof loadHtml>, html: string): Fiel
   ];
   for (const [pattern, jsonPath] of jsonPatterns) {
     for (const match of normalizedHtml.matchAll(pattern)) {
-      evidence.push(evidenceForAmazonPrice(match[1], "product-json", { jsonPath }));
+      const index = match.index ?? 0;
+      const context = normalizedHtml.slice(Math.max(0, index - 700), index + 700);
+      const score = amazonPriceContextScore(
+        context,
+        jsonPath.includes("displayPrice") || jsonPath.includes("priceAmount") ? 45 : 35,
+        asin,
+      );
+      evidence.push(
+        evidenceForAmazonPrice(match[1], "product-json", {
+          jsonPath,
+          confidence: score.confidence,
+          reason: score.reason,
+        }),
+      );
       if (evidence.length > 30) break;
     }
   }
@@ -157,9 +212,13 @@ function amazonPriceEvidence($: ReturnType<typeof loadHtml>, html: string): Fiel
   ];
   for (const selector of selectors) {
     $(selector).each((_, element) => {
+      const context = $.html($(element).closest("#corePriceDisplay_desktop_feature_div, #corePriceDisplay_mobile_feature_div, #corePrice_feature_div, #apex_desktop, #newAccordionRow, #buybox, body").first()).slice(0, 3000);
+      const score = amazonPriceContextScore(context, 60, asin);
       evidence.push(
         evidenceForAmazonPrice($(element).text(), "selector", {
           selector,
+          confidence: score.confidence,
+          reason: score.reason,
         }),
       );
     });
@@ -170,20 +229,66 @@ function amazonPriceEvidence($: ReturnType<typeof loadHtml>, html: string): Fiel
     evidence.push(
       evidenceForAmazonPrice(wholeFraction, "selector", {
         selector: ".a-price-whole + .a-price-fraction",
+        confidence: 70,
       }),
     );
   }
 
-  const scored = amazonBestScoredPrice(html);
-  if (scored) {
+  const scored = amazonBestScoredPrice(html, asin);
+  if (scored?.value) {
     evidence.push(
-      evidenceForAmazonPrice(scored, "fallback", {
+      evidenceForAmazonPrice(scored.value, "fallback", {
+        confidence: scored.confidence,
         reason: "scored dollar candidate from Amazon price context",
       }),
     );
   }
 
   return evidence;
+}
+
+function chooseAmazonPriceEvidence(candidates: FieldEvidence[]): FieldEvidence | undefined {
+  const grouped = new Map<string, { candidate: FieldEvidence; score: number; count: number }>();
+
+  for (const candidate of candidates) {
+    if (!candidate.accepted) continue;
+    const price = parsePrice(candidate.normalizedValue ?? candidate.rawValue);
+    if (!isReasonableAmazonPrice(price)) continue;
+    const key = price.toFixed(2);
+    const sourceBoost =
+      candidate.sourceType === "selector"
+        ? 35
+        : candidate.sourceType === "product-json"
+          ? 25
+          : candidate.sourceType === "playwright"
+            ? 45
+            : 0;
+    const specificityBoost =
+      candidate.selector?.includes("corePriceDisplay") ||
+      candidate.selector?.includes("corePrice_feature_div") ||
+      candidate.selector?.includes("apex_desktop") ||
+      candidate.selector?.includes("newAccordionRow")
+        ? 30
+        : 0;
+    const score = (candidate.confidence ?? 0) + sourceBoost + specificityBoost;
+    const existing = grouped.get(key);
+    if (!existing) {
+      grouped.set(key, { candidate, score, count: 1 });
+    } else {
+      existing.count += 1;
+      existing.score += score;
+      if (score > (existing.candidate.confidence ?? 0)) {
+        existing.candidate = candidate;
+      }
+    }
+  }
+
+  return Array.from(grouped.values())
+    .map((entry) => ({
+      ...entry,
+      total: entry.score + entry.count * 12,
+    }))
+    .sort((left, right) => right.total - left.total)[0]?.candidate;
 }
 
 function amazonPriceFromWholeFraction($: ReturnType<typeof loadHtml>): string | undefined {
@@ -229,10 +334,13 @@ function amazonPriceText($: ReturnType<typeof loadHtml>, html: string): string |
     });
     if (value) return value;
   }
-  return amazonPriceFromWholeFraction($) ?? amazonBestScoredPrice(html);
+  return amazonPriceFromWholeFraction($) ?? amazonBestScoredPrice(html)?.value;
 }
 
-function amazonBestScoredPrice(html: string): string | undefined {
+function amazonBestScoredPrice(
+  html: string,
+  asin?: string,
+): { value: string; confidence: number } | undefined {
   const normalizedHtml = html
     .replace(/&quot;/g, '"')
     .replace(/\\"/g, '"')
@@ -249,12 +357,9 @@ function amazonBestScoredPrice(html: string): string | undefined {
     const index = match.index ?? 0;
     const context = normalizedHtml.slice(Math.max(0, index - 400), index + 400);
     let score = 1;
-    if (/priceToPay|corePrice|apex_desktop|displayPrice|priceAmount|a-price|offer/i.test(context)) {
-      score += 8;
-    }
-    if (/coupon|saving|shipping|delivery|protector|warranty|bundle|was:|list price/i.test(context)) {
-      score -= 4;
-    }
+    const contextScore = amazonPriceContextScore(context, 8, asin);
+    if (contextScore.confidence <= 0) continue;
+    score += contextScore.confidence;
     if (/buy new|add to cart|add to basket/i.test(context)) {
       score += 2;
     }
@@ -266,13 +371,14 @@ function amazonBestScoredPrice(html: string): string | undefined {
     candidates.set(key, current);
   }
 
-  return Array.from(candidates.entries())
+  const best = Array.from(candidates.entries())
     .map(([value, stats]) => ({
       value,
       score: stats.score + stats.count * 2,
       price: parsePrice(value) ?? 0,
     }))
-    .sort((left, right) => right.score - left.score || right.price - left.price)[0]?.value;
+    .sort((left, right) => right.score - left.score || right.price - left.price)[0];
+  return best ? { value: best.value, confidence: Math.min(55, best.score) } : undefined;
 }
 
 async function amazonPriceFromAlternatePages(
@@ -326,6 +432,7 @@ async function amazonPriceWithPlaywright(url: string): Promise<FieldEvidence | u
     if (!rawValue) return undefined;
     const evidence = evidenceForAmazonPrice(rawValue, "playwright", {
       selector: ".a-price .a-offscreen",
+      confidence: 90,
     });
     return evidence.accepted ? evidence : undefined;
   } catch (error) {
@@ -382,8 +489,8 @@ export async function extractAmazonProduct(context: ExtractorContext) {
         accepted: true,
       });
     }
-    evidence.priceCandidates.push(...amazonPriceEvidence($, context.html));
-    const acceptedPriceEvidence = evidence.priceCandidates.find((candidate) => candidate.accepted);
+    evidence.priceCandidates.push(...amazonPriceEvidence($, context.html, asin));
+    const acceptedPriceEvidence = chooseAmazonPriceEvidence(evidence.priceCandidates);
     let priceText =
       cleanText(acceptedPriceEvidence?.rawValue) ??
       amazonPriceText($, context.html) ??

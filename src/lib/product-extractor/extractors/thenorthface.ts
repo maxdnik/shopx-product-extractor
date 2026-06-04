@@ -38,12 +38,49 @@ function tnfEmbeddedOptions(html: string, kind: "color" | "size"): ProductVarian
     for (const match of html.matchAll(pattern)) {
       const label = cleanText(match[1]);
       if (!label) continue;
-      if (kind === "color" && !isLikelyColorLabel(label)) continue;
+      if (kind === "color" && !isTnfColorLabel(label)) continue;
       if (kind === "size" && !isLikelySizeLabel(label)) continue;
       options.push({ label });
     }
   }
   return dedupeVariantOptions(options);
+}
+
+function isTnfColorLabel(label: string): boolean {
+  const cleaned = cleanText(label);
+  if (!cleaned || !isLikelyColorLabel(cleaned)) return false;
+  if (
+    /review|recommend|related|bra\b|sports bra|description|features|sku|style|product|jacket|hoodie|shirt|pant|men'?s|women'?s/i.test(
+      cleaned,
+    )
+  ) {
+    return false;
+  }
+  if (/^NF0[A-Z0-9]+/i.test(cleaned) || /^[A-Z0-9]{6,}(?:-[A-Z0-9]+)?$/.test(cleaned)) {
+    return false;
+  }
+  return true;
+}
+
+function sanitizeTnfColors(
+  options: ProductVariantOption[],
+  evidence: ProductEvidenceDebug,
+): ProductVariantOption[] {
+  return dedupeVariantOptions(options.filter((option) => {
+    const accepted = isTnfColorLabel(option.label);
+    if (!accepted) {
+      evidence.rejectedCandidates.push({
+        field: "variants.colors",
+        kind: "color",
+        sourceType: option.url ? "selector" : "product-json",
+        label: option.label,
+        rawValue: option.label,
+        accepted: false,
+        reason: "not a TNF product color swatch or variation value",
+      });
+    }
+    return accepted;
+  }));
 }
 
 function tnfTextSizeOptions(text: string): ProductVariantOption[] {
@@ -204,7 +241,21 @@ export async function extractTheNorthFaceProduct(context: ExtractorContext) {
           cleanText($element.attr("title")) ??
           cleanText($element.find("img").attr("alt")) ??
           cleanText($element.text());
-        if (!label || !isLikelyColorLabel(label)) return;
+        if (!label || !isTnfColorLabel(label)) {
+          if (label) {
+            evidence.rejectedCandidates.push({
+              field: "variants.colors",
+              kind: "color",
+              sourceType: "selector",
+              selector: "[data-attr='color'], [aria-label*='color' i], a[href*='color=']",
+              label,
+              rawValue: label,
+              accepted: false,
+              reason: "not a TNF product color swatch",
+            });
+          }
+          return;
+        }
         evidence.colorCandidates.push({
           field: "variants.colors",
           kind: "color",
@@ -287,7 +338,7 @@ export async function extractTheNorthFaceProduct(context: ExtractorContext) {
     });
     result.brand = "The North Face";
     result = replaceVariants(result, {
-      colors: dedupeVariantOptions(colors),
+      colors: sanitizeTnfColors(colors, evidence),
       sizes: dedupeVariantOptions(sizes),
     });
   }

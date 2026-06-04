@@ -46,6 +46,7 @@ function isCalvinKleinVariantLabel(label: string, kind: "color" | "size"): boole
   if (/(facebook|google|apple|paypal|klarna|afterpay|icon|laptop|sign in|account)/i.test(cleaned)) {
     return false;
   }
+  if (kind === "color" && isLikelySizeLabel(cleaned)) return false;
   return kind === "color" ? isLikelyColorLabel(cleaned) : isLikelySizeLabel(cleaned);
 }
 
@@ -91,6 +92,100 @@ function calvinKleinTextSizeOptions(text: string): ProductVariantOption[] {
   }
 
   return sanitizeCalvinKleinOptions(options, "size");
+}
+
+async function calvinKleinSizesWithPlaywright(url: string): Promise<{
+  sizes: ProductVariantOption[];
+  evidence: ProductEvidenceDebug["sizeCandidates"];
+  rejected: ProductEvidenceDebug["rejectedCandidates"];
+}> {
+  const evidence: ProductEvidenceDebug["sizeCandidates"] = [];
+  const rejected: ProductEvidenceDebug["rejectedCandidates"] = [];
+  if (process.env.PRODUCT_EXTRACTOR_DISABLE_AUTO_PLAYWRIGHT === "true") {
+    return { sizes: [], evidence, rejected };
+  }
+
+  let browser: Awaited<ReturnType<typeof import("playwright").chromium.launch>> | undefined;
+  try {
+    const { chromium } = await import("playwright");
+    browser = await chromium.launch({ headless: true, timeout: 12_000 });
+    const page = await browser.newPage({
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+      locale: "en-US",
+      viewport: { width: 1280, height: 900 },
+    });
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15_000 });
+    await page
+      .waitForSelector(
+        "[data-testid*='size' i], [data-test*='size' i], [aria-label*='size' i], button, option",
+        { timeout: 8_000 },
+      )
+      .catch(() => undefined);
+    const labels = await page.evaluate(() => {
+      const clean = (value: string | null | undefined) =>
+        value?.replace(/\s+/g, " ").trim();
+      const result: string[] = [];
+      for (const element of Array.from(
+        document.querySelectorAll(
+          "[data-testid*='size' i], [data-test*='size' i], [aria-label*='size' i], button, option, [role='option']",
+        ),
+      )) {
+        const context = [
+          element.getAttribute("aria-label"),
+          element.getAttribute("data-testid"),
+          element.getAttribute("data-test"),
+          element.closest("fieldset")?.textContent,
+          element.parentElement?.textContent,
+        ]
+          .map(clean)
+          .filter(Boolean)
+          .join(" ");
+        if (!/size|select/i.test(context)) continue;
+        const label =
+          clean(element.getAttribute("aria-label")) ??
+          clean(element.getAttribute("value")) ??
+          clean(element.textContent);
+        if (label) result.push(label.replace(/^(size|select size)[:\s-]*/i, ""));
+      }
+      return result;
+    });
+
+    const sizes: ProductVariantOption[] = [];
+    for (const label of labels) {
+      const accepted = isCalvinKleinVariantLabel(label, "size");
+      const record = {
+        field: "variants.sizes",
+        kind: "size" as const,
+        sourceType: "playwright" as const,
+        selector: "[data-testid*='size' i], [aria-label*='size' i], button, option",
+        label,
+        rawValue: label,
+        normalizedValue: label,
+        accepted,
+        reason: accepted ? undefined : "not a valid Calvin Klein size label",
+      };
+      if (accepted) {
+        evidence.push(record);
+        sizes.push({ label });
+      } else {
+        rejected.push(record);
+      }
+    }
+    return { sizes: sanitizeCalvinKleinOptions(sizes, "size"), evidence, rejected };
+  } catch (error) {
+    rejected.push({
+      field: "variants.sizes",
+      kind: "size",
+      sourceType: "playwright",
+      accepted: false,
+      reason: error instanceof Error ? error.message : "Calvin Klein Playwright size extraction failed",
+    });
+    return { sizes: [], evidence, rejected };
+  } finally {
+    await browser?.close().catch(() => undefined);
+  }
 }
 
 function embeddedCalvinKleinOptions(
@@ -240,6 +335,12 @@ export async function extractCalvinKleinProduct(context: ExtractorContext) {
     colors.push(...embeddedCalvinKleinOptions(context.html, "color"));
     sizes.push(...embeddedCalvinKleinOptions(context.html, "size"));
     sizes.push(...calvinKleinTextSizeOptions($("body").text()));
+    if (sizes.length === 0) {
+      const browserSizes = await calvinKleinSizesWithPlaywright(context.normalized.normalizedUrl);
+      sizes.push(...browserSizes.sizes);
+      evidence.sizeCandidates.push(...browserSizes.evidence);
+      evidence.rejectedCandidates.push(...browserSizes.rejected);
+    }
 
     result = mergeProductResults(result, {
       brand: "Calvin Klein",

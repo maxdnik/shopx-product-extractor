@@ -39,6 +39,7 @@ function isRalphVariantLabel(label: string, kind: "color" | "size"): boolean {
   if (/(facebook|google|apple|paypal|klarna|afterpay|icon|laptop|sign in|account)/i.test(cleaned)) {
     return false;
   }
+  if (kind === "color" && isLikelySizeLabel(cleaned)) return false;
   return kind === "color" ? isLikelyColorLabel(cleaned) : isLikelySizeLabel(cleaned);
 }
 

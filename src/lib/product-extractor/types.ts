@@ -65,6 +65,7 @@ export type FieldEvidence = {
   jsonPath?: string;
   rawValue?: unknown;
   normalizedValue?: unknown;
+  confidence?: number;
   accepted: boolean;
   reason?: string;
 };
