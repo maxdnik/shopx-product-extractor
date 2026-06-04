@@ -1,0 +1,348 @@
+{
+  "globalRules": {
+    "title": { "required": true, "minLength": 3 },
+    "brand": { "required": false },
+    "store": { "required": true },
+    "price": { "required": true, "greaterThan": 0 },
+    "currency": { "required": true, "allowedValues": ["USD", "US$", "$"] },
+    "image": { "required": true, "mustStartWith": "http" },
+    "images": { "required": false, "minItems": 1 },
+    "description": { "required": true, "minLength": 10 },
+    "sourceUrl": { "required": true, "mustStartWith": "http" },
+    "availability": { "required": false },
+    "colors": { "required": false, "minItems": 1 },
+    "sizes": { "required": false, "minItems": 3 },
+    "variants": { "required": false, "minItems": 1 },
+    "blockedTitlePatterns": [
+      "We think you are in",
+      "Update your location",
+      "Access Denied",
+      "Robot Check",
+      "Sorry",
+      "Captcha",
+      "Forbidden"
+    ],
+    "garbageValues": [
+      "N/A",
+      "Select Size",
+      "undefined",
+      "null",
+      "We think you are in United Kingdom"
+    ],
+    "forbiddenVariantPatterns": [
+      "Basketball",
+      "Running",
+      "All Shoes",
+      "Father's Day Shoes",
+      "Shop by Color",
+      "Dark Neutrals",
+      "Crimson",
+      "Help",
+      "Details",
+      "Men's",
+      "Women's",
+      "Extra \\\\d+% off",
+      "Size Guide",
+      "Product Details",
+      "Product detailsSize",
+      "Fabric & care",
+      "Shipping & returns",
+      "Zappos",
+      "\\\\bShop\\\\b",
+      "\\\\bSale\\\\b",
+      "New Arrivals",
+      "\\\\bClothing\\\\b",
+      "\\\\bShoes\\\\b",
+      "\\\\bAccessories\\\\b",
+      "^Guide$",
+      "^on$"
+    ]
+  },
+  "references": [
+    {
+      "id": "nike-pegasus-premium",
+      "store": "nike",
+      "url": "https://www.nike.com/us/es/t/tenis-de-correr-en-pavimento-pegasus-premium-kWXqW9yR/HQ2592-106",
+      "expected": {
+        "title": { "required": true, "minLength": 5, "includes": "Pegasus" },
+        "brand": { "required": true, "includes": "Nike" },
+        "price": { "required": true, "greaterThan": 0, "min": 50, "max": 500 },
+        "currency": { "required": true },
+        "image": { "required": true, "mustStartWith": "http" },
+        "description": { "required": true, "minLength": 10 },
+        "colors": { "required": true, "minItems": 1 },
+        "sizes": { "required": true, "minItems": 5 },
+        "variants": { "required": true, "minItems": 1 }
+      }
+    },
+    {
+      "id": "nike-phoenix-fleece",
+      "store": "nike",
+      "url": "https://www.nike.com/us/es/t/sudadera-oversized-de-cuello-redondo-sportswear-phoenix-fleece-6N8Z9QMG/IO0417-663",
+      "expected": {
+        "title": { "required": true, "minLength": 5, "includes": "Phoenix" },
+        "brand": { "required": true, "includes": "Nike" },
+        "price": { "required": true, "greaterThan": 0, "min": 20, "max": 200 },
+        "currency": { "required": true },
+        "image": { "required": true, "mustStartWith": "http" },
+        "description": { "required": true, "minLength": 10 },
+        "colors": { "required": true, "minItems": 1 },
+        "sizes": { "required": true, "minItems": 3 },
+        "variants": { "required": true, "minItems": 1 }
+      }
+    },
+    {
+      "id": "amazon-lego",
+      "store": "amazon",
+      "url": "https://www.amazon.com/LEGO-Star-Wars-Mandalorian-construcci%C3%B3n/dp/B0FMZD93DV/ref=sr_1_2_sspa?crid=2K8O2OH4Z9VUR&dib=eyJ2IjoiMSJ9.Ig-mFp-Argeo9ObuJo4gHB94GSbM2Z5P8D6YAuYuuQPC6dvSQUaqmDKckBLHctscE9sJzZcYTyPYlU-Z3ZeHw5cAfkdpPujnXT8SgPB5RaLQ0g5BD5DPQ5aSZ3jyNVT2iaFnxnGOz9MbjiZmW8CSytQMjAkZp7Unk5dg3K1AlsncZMMGZ4vEKE4oTQEDq6A_85Foo8JqZs2-7peLTESK9MqC6gjkg9paNn51gwxZqFobqk_ZaXQnCrjQ4-kJYiHUC1lfCCzQ3AZFejkdY5uICHfzIwmGF6knMkKXonQHDK4.LI_9KUVEEixVKMpP20daXkVekwFjrm8yNz0b3jeceIc&dib_tag=se&keywords=lego+star+wars&qid=1780508463&sprefix=lego%2Caps%2C522&sr=8-2-spons&sp_csd=d2lkZ2V0TmFtZT1zcF9hdGY&psc=1",
+      "expected": {
+        "title": { "required": true, "minLength": 5, "includes": "LEGO" },
+        "brand": { "required": true, "includes": "Star Wars" },
+        "price": { "required": true, "greaterThan": 0, "min": 20, "max": 500, "expectedValue": 149.99, "tolerance": 0.75 },
+        "currency": { "required": true },
+        "image": { "required": true, "mustStartWith": "http" },
+        "description": { "required": false },
+        "colors": { "required": false },
+        "sizes": { "required": false },
+        "variants": { "required": false }
+      }
+    },
+    {
+      "id": "amazon-airpods",
+      "store": "amazon",
+      "url": "https://www.amazon.com/gp/aw/d/B0DGHMNQ5Z/?_encoding=UTF8&pd_rd_plhdr=t&aaxitk=9002a2e3a3b5f0fff554e7cc59bc23b2&hsa_cr_id=0&qid=1780508478&sr=1-2-9e67e56a-6f64-441f-a281-df67fc737124&ref_=sbx_s_sparkle_sbtcd_asin_0_img&pd_rd_w=acENw&content-id=amzn1.sym.2fb72bc8-96ef-420d-b08f-c04b69f36507%3Aamzn1.sym.2fb72bc8-96ef-420d-b08f-c04b69f36507&pf_rd_p=2fb72bc8-96ef-420d-b08f-c04b69f36507&pf_rd_r=056VG9D4PZ297DQV0G1D&pd_rd_wg=W39y7&pd_rd_r=89286264-3c51-4738-8d87-10e9bc9073b3",
+      "expected": {
+        "title": { "required": true, "minLength": 5, "includes": "AirPods" },
+        "brand": { "required": true, "includes": "Apple" },
+        "price": { "required": true, "greaterThan": 0, "min": 20, "max": 300, "expectedValue": 99, "tolerance": 0.75 },
+        "currency": { "required": true },
+        "image": { "required": true, "mustStartWith": "http" },
+        "description": { "required": false },
+        "colors": { "required": false },
+        "sizes": { "required": false },
+        "variants": { "required": false }
+      }
+    },
+    {
+      "id": "tnf-nuptse",
+      "store": "thenorthface",
+      "url": "https://www.thenorthface.com/en-us/p/mens/mens-jackets-and-vests/mens-insulated-and-down-300771/mens-1996-retro-nuptse-jacket-NF0A3C8D?color=JY7&fitType=Standard",
+      "allowDiagnostic": true,
+      "expectedBlockedBrand": "The North Face",
+      "expected": {
+        "title": { "required": true, "minLength": 5, "includes": "Nuptse" },
+        "brand": { "required": true, "includes": "The North Face" },
+        "price": { "required": true, "greaterThan": 0, "min": 50, "max": 1000 },
+        "currency": { "required": true },
+        "image": { "required": true, "mustStartWith": "http" },
+        "description": { "required": true, "minLength": 10 },
+        "colors": { "required": true, "minItems": 1 },
+        "sizes": { "required": true, "minItems": 1 },
+        "variants": { "required": true, "minItems": 1 }
+      }
+    },
+    {
+      "id": "tnf-jaida",
+      "store": "thenorthface",
+      "url": "https://www.thenorthface.com/en-us/p/womens/womens-tops/womens-active-tops-224263/womens-jaida-full-zip-hooded-jacket-NF0A8G8K?color=FM2",
+      "allowDiagnostic": true,
+      "expectedBlockedBrand": "The North Face",
+      "expected": {
+        "title": { "required": true, "minLength": 5, "includes": "Jaida" },
+        "brand": { "required": true, "includes": "The North Face" },
+        "price": { "required": true, "greaterThan": 0, "min": 20, "max": 500 },
+        "currency": { "required": true },
+        "image": { "required": true, "mustStartWith": "http" },
+        "description": { "required": true, "minLength": 10 },
+        "colors": { "required": true, "minItems": 1 },
+        "sizes": { "required": true, "minItems": 1 },
+        "variants": { "required": true, "minItems": 1 }
+      }
+    },
+    {
+      "id": "gap-mens-tshirt",
+      "store": "gap",
+      "url": "https://www.gap.com/browse/product.do?pid=891438012&vid=1&pcid=5225&cid=5225&nav=meganav%3AMen%3ACategories%3AT-Shirts#pdp-page-content",
+      "expected": {
+        "title": { "required": true, "minLength": 5, "includes": "T-Shirt" },
+        "price": { "required": true, "greaterThan": 0, "min": 5, "max": 100 },
+        "currency": { "required": true },
+        "image": { "required": true, "mustStartWith": "http" },
+        "description": { "required": false },
+        "colors": { "required": true, "minItems": 1 },
+        "sizes": { "required": true, "minItems": 3 },
+        "variants": { "required": true, "minItems": 1 }
+      }
+    },
+    {
+      "id": "gap-jeans",
+      "store": "gap",
+      "url": "https://www.gap.com/browse/product.do?pid=896592002&vid=1&pcid=5664&cid=5664&nav=meganav%3AWomen%3ACategories%3AJeans",
+      "expected": {
+        "title": { "required": true, "minLength": 5, "includes": "Jeans" },
+        "price": { "required": true, "greaterThan": 0, "min": 20, "max": 200 },
+        "currency": { "required": true },
+        "image": { "required": true, "mustStartWith": "http" },
+        "description": { "required": false },
+        "colors": { "required": true, "minItems": 1 },
+        "sizes": { "required": true, "minItems": 3 },
+        "variants": { "required": true, "minItems": 1 }
+      }
+    },
+    {
+      "id": "gucci-loafer",
+      "store": "gucci",
+      "url": "https://www.gucci.com/us/en/pr/men/shoes-for-men/loafers-moccasins-for-men/mens-gucci-como-loafer-p-874936AAGSM2047",
+      "allowDiagnostic": true,
+      "expected": {
+        "title": { "required": true, "minLength": 5, "includes": "loafer" },
+        "brand": { "required": true, "includes": "Gucci" },
+        "price": { "required": true, "greaterThan": 0, "min": 200, "max": 5000 },
+        "currency": { "required": true },
+        "image": { "required": true, "mustStartWith": "http" },
+        "description": { "required": true, "minLength": 10 },
+        "sizes": { "required": true, "minItems": 1 }
+      }
+    },
+    {
+      "id": "adidas-samba",
+      "store": "adidas",
+      "url": "https://www.adidas.com/us/samba-og-shoes/B75806.html",
+      "expectedBlocked": true,
+      "expectedBlockedBrand": "adidas",
+      "expected": {}
+    },
+    {
+      "id": "adidas-pants",
+      "store": "adidas",
+      "url": "https://www.adidas.com/us/adidas-originals-summer-glow-denim-firebird-track-pants/KX1195.html",
+      "expectedBlocked": true,
+      "expectedBlockedBrand": "adidas",
+      "expected": {}
+    },
+    {
+      "id": "adidas-top",
+      "store": "adidas",
+      "url": "https://www.adidas.com/us/adidas-originals-summer-glow-knitted-firebird-track-top/KY2031.html",
+      "expectedBlocked": true,
+      "expectedBlockedBrand": "adidas",
+      "expected": {}
+    },
+    {
+      "id": "hoka-skyward",
+      "store": "generic",
+      "url": "https://www.hoka.com/en/us/womens-everyday-running-gear/skyward-x-2/1171926.html?dwvar_1171926_color=BSSM",
+      "allowDiagnostic": true,
+      "expected": { "title": { "required": true, "includes": "Skyward" }, "image": { "required": true, "mustStartWith": "http" }, "description": { "required": false } }
+    },
+    {
+      "id": "hoka-airolite",
+      "store": "generic",
+      "url": "https://www.hoka.com/en/us/mens-tops/airolite-long-sleeve-2.0/1175772.html",
+      "allowDiagnostic": true,
+      "expected": { "title": { "required": true, "includes": "Airolite" }, "image": { "required": true, "mustStartWith": "http" }, "description": { "required": false } }
+    },
+    {
+      "id": "vans-tee",
+      "store": "generic",
+      "url": "https://www.vans.com/en-us/p/mens/clothing/shirts-5810/beer-skull-ss-tee-VN000XBDWHT",
+      "allowDiagnostic": true,
+      "expected": { "title": { "required": true, "includes": "Beer Skull" }, "image": { "required": true, "mustStartWith": "http" }, "description": { "required": false } }
+    },
+    {
+      "id": "vans-oldskool",
+      "store": "generic",
+      "url": "https://www.vans.com/en-us/p/otw-90083/lx-old-skool-36-mgs-VN000ZAZHAB",
+      "allowDiagnostic": true,
+      "expected": { "title": { "required": true, "includes": "Old Skool" }, "image": { "required": true, "mustStartWith": "http" }, "description": { "required": false } }
+    },
+    {
+      "id": "ralph-polo",
+      "store": "ralphlauren",
+      "url": "https://www.ralphlauren.com/men-clothing-polo-shirts/soft-cotton-polo-shirt---all-fits/401482-P.html?masterId=401482&userSelectedColor=Refined%20Navy",
+      "allowDiagnostic": true,
+      "expectedBlockedBrand": "Ralph Lauren",
+      "expected": { "title": { "required": true, "includes": "Polo" }, "brand": { "required": true, "includes": "Ralph" }, "image": { "required": true, "mustStartWith": "http" }, "description": { "required": false }, "colors": { "required": true, "minItems": 1 }, "sizes": { "required": true, "minItems": 1 } }
+    },
+    {
+      "id": "ralph-linen",
+      "store": "ralphlauren",
+      "url": "https://www.ralphlauren.com/women-clothing-shirts-blouses/classic-fit-linen-shirt/100044088.html?dwvar100044088_colorname=Classic%20Oxford%20White&cgid=women-clothing-shirts-blouses#ab=NA_WLP_Slot_2_S2_Image_SHOP&start=1&cgid=women-clothing-shirts-blouses",
+      "allowDiagnostic": true,
+      "expectedBlockedBrand": "Ralph Lauren",
+      "expected": { "title": { "required": true, "includes": "Linen" }, "brand": { "required": true, "includes": "Ralph" }, "image": { "required": true, "mustStartWith": "http" }, "description": { "required": false }, "colors": { "required": true, "minItems": 1 }, "sizes": { "required": true, "minItems": 1 } }
+    },
+    {
+      "id": "levis-501",
+      "store": "generic",
+      "url": "https://www.levi.com/US/en_US/clothing/men/1980s-501-original-fit-mens-jeans/p/A58750016",
+      "allowDiagnostic": true,
+      "expected": { "title": { "required": true, "includes": "501" }, "brand": { "required": true, "includes": "Levi" }, "image": { "required": true, "mustStartWith": "http" }, "description": { "required": false } }
+    },
+    {
+      "id": "levis-tank",
+      "store": "generic",
+      "url": "https://www.levi.com/US/en_US/clothing/women/shirts/garment-dye-essential-racer-tank-top/p/A33810032",
+      "allowDiagnostic": true,
+      "expected": { "title": { "required": true, "includes": "Tank" }, "brand": { "required": true, "includes": "Levi" }, "image": { "required": true, "mustStartWith": "http" }, "description": { "required": false } }
+    },
+    {
+      "id": "ck-boxer",
+      "store": "calvinklein",
+      "url": "https://www.calvinklein.us/en/underwear/men/mens-boxers/cotton-classics-3-pack-knit-boxer/NB4005-001.html?journey=Folder_0000101",
+      "allowDiagnostic": true,
+      "expectedBlockedBrand": "Calvin Klein",
+      "expected": { "title": { "required": true, "includes": "Boxer" }, "brand": { "required": true, "includes": "Calvin" }, "image": { "required": true, "mustStartWith": "http" }, "description": { "required": false }, "colors": { "required": true, "minItems": 1 }, "sizes": { "required": true, "minItems": 1 } }
+    },
+    {
+      "id": "ck-jacket",
+      "store": "calvinklein",
+      "url": "https://www.calvinklein.us/en/women/apparel/womens-outerwear/quilted-liner-jacket/44G506G-PAS.html?journey=Tier_0000002",
+      "allowDiagnostic": true,
+      "expectedBlockedBrand": "Calvin Klein",
+      "expected": { "title": { "required": true, "includes": "Jacket" }, "brand": { "required": true, "includes": "Calvin" }, "image": { "required": true, "mustStartWith": "http" }, "description": { "required": false }, "colors": { "required": true, "minItems": 1 }, "sizes": { "required": true, "minItems": 1 } }
+    },
+    {
+      "id": "backcountry-board",
+      "store": "generic",
+      "url": "https://www.backcountry.com/rome-warden-snowboard-2026",
+      "allowDiagnostic": true,
+      "expected": { "title": { "required": true, "includes": "Snowboard" }, "image": { "required": true, "mustStartWith": "http" }, "description": { "required": false } }
+    },
+    {
+      "id": "backcountry-top",
+      "store": "generic",
+      "url": "https://www.backcountry.com/fp-movement-high-plank-ots-layer-top-womens",
+      "allowDiagnostic": true,
+      "expected": { "title": { "required": true, "includes": "Top" }, "image": { "required": true, "mustStartWith": "http" }, "description": { "required": false } }
+    },
+    {
+      "id": "patagonia-rain",
+      "store": "generic",
+      "url": "https://www.patagonia.com/es/product/mens-outdoor-everyday-rain-jacket/20850.html?dwvar_20850_color=WSTO",
+      "allowDiagnostic": true,
+      "expected": { "title": { "required": true, "includes": "Rain" }, "brand": { "required": true, "includes": "Patagonia" }, "image": { "required": true, "mustStartWith": "http" }, "description": { "required": false } }
+    },
+    {
+      "id": "patagonia-shirt",
+      "store": "generic",
+      "url": "https://www.patagonia.com/es/product/mens-long-sleeved-capilene-cool-daily-shirt/45181.html?dwvar_45181_color=BSLX",
+      "allowDiagnostic": true,
+      "expected": { "title": { "required": true, "includes": "Capilene" }, "brand": { "required": true, "includes": "Patagonia" }, "image": { "required": true, "mustStartWith": "http" }, "description": { "required": false } }
+    },
+    {
+      "id": "bh-sony",
+      "store": "generic",
+      "url": "https://www.bhphotovideo.com/c/product/1970580-REG/sony_ilce7rm6b_a7r_vi_mirrorless_camera.html",
+      "allowDiagnostic": true,
+      "expected": { "title": { "required": true, "includes": "Sony" }, "brand": { "required": true, "includes": "Sony" }, "image": { "required": true, "mustStartWith": "http" }, "description": { "required": false } }
+    },
+    {
+      "id": "bh-bag",
+      "store": "generic",
+      "url": "https://www.bhphotovideo.com/c/product/1085206-REG/arco_cs_d20b_video_dr_bag_20.html",
+      "allowDiagnostic": true,
+      "expected": { "title": { "required": true, "includes": "Bag" }, "image": { "required": true, "mustStartWith": "http" }, "description": { "required": false } }
+    }
+  ]
+}
