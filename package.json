@@ -1,0 +1,41 @@
+{
+  "name": "shopx-product-discovery-engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Layered ecommerce product discovery and extraction engine for ShopX Quotes.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "benchmark": "tsx benchmarks/run-benchmark.ts",
+    "benchmark:no-ai": "tsx benchmarks/run-benchmark.ts --mode no-ai",
+    "benchmark:cache-warm": "tsx benchmarks/run-benchmark.ts --mode cache-warm",
+    "lint": "eslint . --ext .ts"
+  },
+  "keywords": [
+    "ecommerce",
+    "product-extraction",
+    "product-discovery",
+    "schema-org",
+    "playwright"
+  ],
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@playwright/test": "^1.56.1",
+    "cheerio": "^1.1.2",
+    "commander": "^14.0.2",
+    "dotenv": "^17.2.3",
+    "playwright": "^1.56.1",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.14"
+  }
+}

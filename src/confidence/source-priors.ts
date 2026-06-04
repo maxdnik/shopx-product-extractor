@@ -1,0 +1,31 @@
+import type { ExtractSource } from '../domain/sources.js';
+
+export const SOURCE_PRIORS: Record<ExtractSource, number> = {
+  CACHE: 0.82,
+  JSON_LD: 0.92,
+  SCHEMA_ORG_PRODUCT: 0.94,
+  SCHEMA_ORG_PRODUCT_GROUP: 0.9,
+  MICRODATA: 0.86,
+  RDFA: 0.84,
+  OPEN_GRAPH: 0.76,
+  EMBEDDED_JSON: 0.88,
+  PLATFORM_SHOPIFY: 0.95,
+  PLATFORM_WOOCOMMERCE: 0.92,
+  PLATFORM_MAGENTO: 0.92,
+  PLATFORM_BIGCOMMERCE: 0.92,
+  PLATFORM_SFCC: 0.9,
+  PLAYWRIGHT_NETWORK: 0.92,
+  PLAYWRIGHT_RENDERED_DOM: 0.68,
+  PLAYWRIGHT_EMBEDDED_STATE: 0.88,
+  AI_FALLBACK: 0.68,
+  RYE_API: 0.9,
+  DIFFBOT_API: 0.9,
+  ZYTE_API: 0.88,
+  BRIGHT_DATA_API: 0.88,
+  NORMALIZER: 0.95,
+  UNKNOWN: 0
+};
+
+export function sourcePrior(source: ExtractSource): number {
+  return SOURCE_PRIORS[source] ?? 0;
+}
