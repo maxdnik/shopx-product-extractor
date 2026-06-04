@@ -7,3 +7,8 @@ export * from './normalization/images.js';
 export * from './normalization/price.js';
 export * from './normalization/text.js';
 export * from './normalization/url.js';
+export * from './cache/cache-key.js';
+export * from './cache/cache-policy.js';
+export * from './cache/product-cache.js';
+export * from './cache/sqlite-product-cache.js';
+export * from './pipeline/product-discovery-engine.js';
