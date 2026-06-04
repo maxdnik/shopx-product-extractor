@@ -7,7 +7,6 @@ import {
   dedupeImages,
   dedupeVariantOptions,
   emptyEvidence,
-  fetchHtml,
   finalizeResult,
   getUrlPathCode,
   isBlockedPage,
@@ -44,23 +43,21 @@ function amazonVariantOptions(
   groupId: string,
 ): ProductVariantOption[] {
   const options: ProductVariantOption[] = [];
-  $(`#${groupId} li, #${groupId} option`).each(
-    (_, element) => {
-      const $element = $(element);
-      const label =
-        cleanText($element.attr("title")?.replace(/^Click to select /i, "")) ??
-        cleanText($element.find(".selection, .a-size-base, img").attr("alt")) ??
-        cleanText($element.text());
-      if (!label || /select|currently unavailable/i.test(label)) return;
-      if (isLikelyNavigationVariantLabel(label)) return;
-      options.push({
-        label,
-        value: cleanText($element.attr("data-defaultasin") ?? $element.attr("value")),
-        available: !/unavailable|disabled/i.test($element.attr("class") ?? ""),
-        image: normalizeImageUrl($element.find("img").attr("src"), $.root().attr("base") ?? ""),
-      });
-    },
-  );
+  $(`#${groupId} li, #${groupId} option`).each((_, element) => {
+    const $element = $(element);
+    const label =
+      cleanText($element.attr("title")?.replace(/^Click to select /i, "")) ??
+      cleanText($element.find(".selection, .a-size-base, img").attr("alt")) ??
+      cleanText($element.text());
+    if (!label || /select|currently unavailable/i.test(label)) return;
+    if (isLikelyNavigationVariantLabel(label)) return;
+    options.push({
+      label,
+      value: cleanText($element.attr("data-defaultasin") ?? $element.attr("value")),
+      available: !/unavailable|disabled/i.test($element.attr("class") ?? ""),
+      image: normalizeImageUrl($element.find("img").attr("src"), $.root().attr("base") ?? ""),
+    });
+  });
   return dedupeVariantOptions(options);
 }
 
@@ -72,33 +69,6 @@ function parseDynamicImageUrls(value: string | undefined): string[] {
   } catch {
     return [];
   }
-}
-
-function amazonOfferJsonPrice(html: string): string | undefined {
-  const normalizedHtml = html
-    .replace(/&quot;/g, '"')
-    .replace(/\\"/g, '"')
-    .replace(/&#36;/g, "$")
-    .replace(/&amp;/g, "&");
-  const patterns = [
-    /"displayString"\s*:\s*"([^"]*\$[^"]+)"/i,
-    /"amount"\s*:\s*([0-9]+(?:\.[0-9]+)?)[\s\S]{0,120}?"currencyCode"\s*:\s*"USD"/i,
-    /"currencyCode"\s*:\s*"USD"[\s\S]{0,120}?"amount"\s*:\s*([0-9]+(?:\.[0-9]+)?)/i,
-    /"priceToPay"\s*:\s*\{[\s\S]{0,600}?"displayString"\s*:\s*"([^"]*\$[^"]+)"/i,
-    /"basisPrice"\s*:\s*\{[\s\S]{0,600}?"displayString"\s*:\s*"([^"]*\$[^"]+)"/i,
-    /"priceAmount"\s*:\s*([0-9]+(?:\.[0-9]+)?)/i,
-    /"displayPrice"\s*:\s*"([^"]*\$[^"]+)"/i,
-    /"price"\s*:\s*\{\s*"amount"\s*:\s*([0-9]+(?:\.[0-9]+)?)/i,
-    /"ourPrice"\s*:\s*"([^"]*\$[^"]+)"/i,
-    /"price"\s*:\s*"(\$[0-9,]+(?:\.[0-9]{2})?)"/i,
-    /a-offscreen">\s*(\$[0-9,]+(?:\.[0-9]{2})?)\s*<\/span>[\s\S]{0,300}?a-price-whole/i,
-  ];
-  for (const pattern of patterns) {
-    const value = cleanText(normalizedHtml.match(pattern)?.[1]);
-    const price = parsePrice(value);
-    if (value && price !== undefined && isReasonableAmazonPrice(price)) return value;
-  }
-  return undefined;
 }
 
 function isReasonableAmazonPrice(price: number | undefined): price is number {
@@ -129,10 +99,9 @@ function amazonPriceContextScore(
   asin?: string,
 ): { confidence: number; reason?: string } {
   const lower = context.toLowerCase();
-  let confidence = base;
   const rejectPatterns: Array<[RegExp, string]> = [
     [/monthly|\/mo|per month|month payment|installment|financing|apr|affirm/i, "financing/monthly payment"],
-    [/coupon|subscribe|save \d+|savings|promotion|promo/i, "coupon or promotional amount"],
+    [/coupon|subscribe|save \d+|savings|promotion|promo|limited time deal/i, "coupon or promotional amount"],
     [/shipping|delivery|import fees|tax|gift wrap/i, "shipping/tax/fee amount"],
     [/warranty|protection plan|protector|case|charger|adapter|accessory/i, "accessory or warranty price"],
     [/sponsored|recommend|customers also|similar item|carousel|comparison|desktop_unified/i, "recommendation/comparison price"],
@@ -142,6 +111,7 @@ function amazonPriceContextScore(
     if (pattern.test(lower)) return { confidence: 0, reason };
   }
 
+  let confidence = base;
   if (/priceToPay|corePrice|corepricedisplay|apex_desktop|buybox|newAccordionRow/i.test(context)) {
     confidence += 45;
   }
@@ -157,37 +127,50 @@ function amazonPriceContextScore(
   if (asin && context.includes(asin)) {
     confidence += 20;
   }
-
   return { confidence: Math.min(confidence, 100) };
 }
 
-function amazonPriceEvidence(
-  $: ReturnType<typeof loadHtml>,
-  html: string,
-  asin?: string,
-): FieldEvidence[] {
-  const evidence: FieldEvidence[] = [];
-  const normalizedHtml = html
+function normalizedAmazonHtml(html: string): string {
+  return html
     .replace(/&quot;/g, '"')
     .replace(/\\"/g, '"')
     .replace(/&#36;/g, "$")
     .replace(/&amp;/g, "&");
+}
 
-  const jsonPatterns: Array<[RegExp, string]> = [
-    [/"displayString"\s*:\s*"([^"]*\$[^"]+)"/gi, "$..displayString"],
-    [/"amount"\s*:\s*([0-9]+(?:\.[0-9]+)?)[\s\S]{0,120}?"currencyCode"\s*:\s*"USD"/gi, "$..amount"],
-    [/"priceAmount"\s*:\s*([0-9]+(?:\.[0-9]+)?)/gi, "$..priceAmount"],
-    [/"displayPrice"\s*:\s*"([^"]*\$[^"]+)"/gi, "$..displayPrice"],
+function amazonOfferJsonEvidence(html: string, asin?: string): FieldEvidence[] {
+  const normalizedHtml = normalizedAmazonHtml(html);
+  const evidence: FieldEvidence[] = [];
+  const patterns: Array<[RegExp, string]> = [
+    [
+      /"priceToPay"\s*:\s*\{[\s\S]{0,900}?"displayString"\s*:\s*"([^"]*\$[^"]+)"/gi,
+      "$..priceToPay.displayString",
+    ],
+    [
+      /"priceToPay"\s*:\s*\{[\s\S]{0,900}?"priceAmount"\s*:\s*([0-9]+(?:\.[0-9]+)?)/gi,
+      "$..priceToPay.priceAmount",
+    ],
+    [
+      /"twister-plus-buying-options-price-data"[\s\S]{0,1200}?"displayPrice"\s*:\s*"([^"]*\$[^"]+)"/gi,
+      "$..twisterPlus.displayPrice",
+    ],
   ];
-  for (const [pattern, jsonPath] of jsonPatterns) {
+
+  for (const [pattern, jsonPath] of patterns) {
     for (const match of normalizedHtml.matchAll(pattern)) {
       const index = match.index ?? 0;
-      const context = normalizedHtml.slice(Math.max(0, index - 700), index + 700);
-      const score = amazonPriceContextScore(
-        context,
-        jsonPath.includes("displayPrice") || jsonPath.includes("priceAmount") ? 45 : 35,
-        asin,
-      );
+      const context = normalizedHtml.slice(Math.max(0, index - 900), index + 900);
+      if (asin && !context.includes(asin)) {
+        evidence.push(
+          evidenceForAmazonPrice(match[1], "product-json", {
+            jsonPath,
+            confidence: 0,
+            reason: "Amazon offer JSON candidate is not tied to current ASIN",
+          }),
+        );
+        continue;
+      }
+      const score = amazonPriceContextScore(context, 75, asin);
       evidence.push(
         evidenceForAmazonPrice(match[1], "product-json", {
           jsonPath,
@@ -195,80 +178,121 @@ function amazonPriceEvidence(
           reason: score.reason,
         }),
       );
-      if (evidence.length > 30) break;
     }
   }
 
-  const selectors = [
-    "#corePriceDisplay_desktop_feature_div .a-price .a-offscreen",
-    "#corePriceDisplay_mobile_feature_div .a-price .a-offscreen",
-    "#corePrice_feature_div .a-price .a-offscreen",
-    "#apex_desktop .a-price .a-offscreen",
-    "#priceblock_ourprice",
-    "#priceblock_dealprice",
-    ".reinventPricePriceToPayMargin .a-offscreen",
-    "[data-a-color='price'] .a-offscreen",
-    "span.a-price span.a-offscreen",
+  return evidence;
+}
+
+function amazonScopedSelectorPriceEvidence(
+  $: ReturnType<typeof loadHtml>,
+  asin?: string,
+): FieldEvidence[] {
+  const evidence: FieldEvidence[] = [];
+  const containerSelectors = [
+    "#corePriceDisplay_desktop_feature_div",
+    "#corePriceDisplay_mobile_feature_div",
+    "#corePrice_feature_div",
+    "#apex_desktop",
+    "#newAccordionRow",
+    "[data-feature-name='corePrice']",
+    "[data-csa-c-content-id='corePrice']",
+    "[data-csa-c-slot-id*='corePrice']",
   ];
-  for (const selector of selectors) {
-    $(selector).each((_, element) => {
-      const context = $.html($(element).closest("#corePriceDisplay_desktop_feature_div, #corePriceDisplay_mobile_feature_div, #corePrice_feature_div, #apex_desktop, #newAccordionRow, #buybox, body").first()).slice(0, 3000);
-      const score = amazonPriceContextScore(context, 60, asin);
-      evidence.push(
-        evidenceForAmazonPrice($(element).text(), "selector", {
-          selector,
-          confidence: score.confidence,
-          reason: score.reason,
-        }),
+
+  for (const containerSelector of containerSelectors) {
+    $(containerSelector).each((_, container) => {
+      const $container = $(container);
+      const tiedAsin =
+        $container.attr("data-csa-c-asin") ??
+        $container.closest("[data-csa-c-asin]").attr("data-csa-c-asin");
+      const context = $.html($container).slice(0, 5000);
+
+      if (asin && tiedAsin && tiedAsin !== asin) return;
+
+      const priceNodes = $container.find(
+        ".a-price:not([data-a-strike='true']) .a-offscreen, #priceblock_ourprice, #priceblock_dealprice",
       );
+
+      if (asin && !tiedAsin && !context.includes(asin)) {
+        priceNodes.each((_, element) => {
+          evidence.push(
+            evidenceForAmazonPrice($(element).text(), "selector", {
+              selector: `${containerSelector} .a-price .a-offscreen`,
+              confidence: 0,
+              reason: "Amazon PDP price container is not tied to current ASIN",
+            }),
+          );
+        });
+        return;
+      }
+
+      priceNodes.each((_, element) => {
+        const nodeContext = $.html($(element).closest(".a-price, [data-a-color='price'], span, div").first()).slice(0, 1000);
+        const score = amazonPriceContextScore(nodeContext, tiedAsin || (asin && context.includes(asin)) ? 100 : 80);
+        evidence.push(
+          evidenceForAmazonPrice($(element).text(), "selector", {
+            selector: `${containerSelector} .a-price .a-offscreen`,
+            confidence: score.confidence,
+            reason: score.reason,
+          }),
+        );
+      });
+
+      const whole = cleanText($container.find(".a-price-whole").first().text());
+      const fraction = cleanText($container.find(".a-price-fraction").first().text());
+      if (whole) {
+        const candidate = `$${whole.replace(/[^\d,]/g, "")}.${(fraction ?? "00").replace(/[^\d]/g, "").padEnd(2, "0").slice(0, 2)}`;
+        const priceContext = $.html($container.find(".a-price-whole").first().closest(".a-price, span, div")).slice(0, 1000);
+        const priceScore = amazonPriceContextScore(priceContext, tiedAsin || (asin && context.includes(asin)) ? 100 : 80);
+        evidence.push(
+          evidenceForAmazonPrice(candidate, "selector", {
+            selector: `${containerSelector} .a-price-whole + .a-price-fraction`,
+            confidence: priceScore.confidence,
+            reason: priceScore.reason,
+          }),
+        );
+      }
     });
   }
 
-  const wholeFraction = amazonPriceFromWholeFraction($);
-  if (wholeFraction) {
-    evidence.push(
-      evidenceForAmazonPrice(wholeFraction, "selector", {
-        selector: ".a-price-whole + .a-price-fraction",
-        confidence: 70,
-      }),
-    );
-  }
-
-  const scored = amazonBestScoredPrice(html, asin);
-  if (scored?.value) {
-    evidence.push(
-      evidenceForAmazonPrice(scored.value, "fallback", {
-        confidence: scored.confidence,
-        reason: "scored dollar candidate from Amazon price context",
-      }),
-    );
-  }
-
   return evidence;
+}
+
+function amazonPriceEvidence(
+  $: ReturnType<typeof loadHtml>,
+  html: string,
+  asin?: string,
+): FieldEvidence[] {
+  return [
+    ...amazonOfferJsonEvidence(html, asin),
+    ...amazonScopedSelectorPriceEvidence($, asin),
+  ];
 }
 
 function chooseAmazonPriceEvidence(candidates: FieldEvidence[]): FieldEvidence | undefined {
   const grouped = new Map<string, { candidate: FieldEvidence; score: number; count: number }>();
 
   for (const candidate of candidates) {
-    if (!candidate.accepted) continue;
+    if (!candidate.accepted || candidate.sourceType === "fallback") continue;
     const price = parsePrice(candidate.normalizedValue ?? candidate.rawValue);
     if (!isReasonableAmazonPrice(price)) continue;
+
     const key = price.toFixed(2);
     const sourceBoost =
-      candidate.sourceType === "selector"
-        ? 35
-        : candidate.sourceType === "product-json"
-          ? 25
-          : candidate.sourceType === "playwright"
-            ? 45
+      candidate.sourceType === "playwright"
+        ? 70
+        : candidate.sourceType === "selector"
+          ? 55
+          : candidate.sourceType === "product-json"
+            ? 35
             : 0;
     const specificityBoost =
       candidate.selector?.includes("corePriceDisplay") ||
       candidate.selector?.includes("corePrice_feature_div") ||
       candidate.selector?.includes("apex_desktop") ||
       candidate.selector?.includes("newAccordionRow")
-        ? 30
+        ? 45
         : 0;
     const score = (candidate.confidence ?? 0) + sourceBoost + specificityBoost;
     const existing = grouped.get(key);
@@ -284,126 +308,11 @@ function chooseAmazonPriceEvidence(candidates: FieldEvidence[]): FieldEvidence |
   }
 
   return Array.from(grouped.values())
-    .map((entry) => ({
-      ...entry,
-      total: entry.score + entry.count * 12,
-    }))
+    .map((entry) => ({ ...entry, total: entry.score + entry.count * 20 }))
     .sort((left, right) => right.total - left.total)[0]?.candidate;
 }
 
-function amazonPriceFromWholeFraction($: ReturnType<typeof loadHtml>): string | undefined {
-  const containers = [
-    "#corePrice_feature_div",
-    "#apex_desktop",
-    "#tp_price_block_total_price_ww",
-    "#newAccordionRow",
-  ];
-  for (const selector of containers) {
-    const container = $(selector).first();
-    if (container.length === 0) continue;
-    const whole = cleanText(container.find(".a-price-whole").first().text());
-    const fraction = cleanText(container.find(".a-price-fraction").first().text());
-    if (!whole) continue;
-    const candidate = `$${whole.replace(/[^\d,]/g, "")}.${(fraction ?? "00").replace(/[^\d]/g, "").padEnd(2, "0").slice(0, 2)}`;
-    if (isReasonableAmazonPrice(parsePrice(candidate))) return candidate;
-  }
-  return undefined;
-}
-
-function amazonPriceText($: ReturnType<typeof loadHtml>, html: string): string | undefined {
-  const offerJsonPrice = amazonOfferJsonPrice(html);
-  if (offerJsonPrice) return offerJsonPrice;
-
-  const selectors = [
-    "#corePrice_feature_div .a-price .a-offscreen",
-    "#apex_desktop .a-price .a-offscreen",
-    "#priceblock_ourprice",
-    "#priceblock_dealprice",
-    ".reinventPricePriceToPayMargin .a-offscreen",
-    "[data-a-color='price'] .a-offscreen",
-    "span.a-price span.a-offscreen",
-  ];
-  for (const selector of selectors) {
-    const values = $(selector)
-      .map((_, element) => cleanText($(element).text()))
-      .get()
-      .filter((value): value is string => Boolean(value) && /\$|USD|US\$/i.test(value));
-    const value = values.find((candidate) => {
-      const price = parsePrice(candidate);
-      return isReasonableAmazonPrice(price);
-    });
-    if (value) return value;
-  }
-  return amazonPriceFromWholeFraction($) ?? amazonBestScoredPrice(html)?.value;
-}
-
-function amazonBestScoredPrice(
-  html: string,
-  asin?: string,
-): { value: string; confidence: number } | undefined {
-  const normalizedHtml = html
-    .replace(/&quot;/g, '"')
-    .replace(/\\"/g, '"')
-    .replace(/&#36;/g, "$")
-    .replace(/&amp;/g, "&");
-  const candidates = new Map<string, { count: number; score: number }>();
-  const pricePattern = /\$\s?([1-9]\d{0,3}(?:,\d{3})*(?:\.\d{2})?)/g;
-
-  for (const match of normalizedHtml.matchAll(pricePattern)) {
-    const raw = `$${match[1]}`;
-    const price = parsePrice(raw);
-    if (!isReasonableAmazonPrice(price) || price < 15) continue;
-
-    const index = match.index ?? 0;
-    const context = normalizedHtml.slice(Math.max(0, index - 400), index + 400);
-    let score = 1;
-    const contextScore = amazonPriceContextScore(context, 8, asin);
-    if (contextScore.confidence <= 0) continue;
-    score += contextScore.confidence;
-    if (/buy new|add to cart|add to basket/i.test(context)) {
-      score += 2;
-    }
-
-    const key = `$${price.toFixed(2)}`;
-    const current = candidates.get(key) ?? { count: 0, score: 0 };
-    current.count += 1;
-    current.score += score;
-    candidates.set(key, current);
-  }
-
-  const best = Array.from(candidates.entries())
-    .map(([value, stats]) => ({
-      value,
-      score: stats.score + stats.count * 2,
-      price: parsePrice(value) ?? 0,
-    }))
-    .sort((left, right) => right.score - left.score || right.price - left.price)[0];
-  return best ? { value: best.value, confidence: Math.min(55, best.score) } : undefined;
-}
-
-async function amazonPriceFromAlternatePages(
-  asin: string | undefined,
-  currentUrl: URL,
-): Promise<string | undefined> {
-  if (!asin) return undefined;
-
-  const candidateUrls = [
-    `https://${currentUrl.hostname}/dp/${asin}?th=1&psc=1`,
-    `https://${currentUrl.hostname}/gp/aw/d/${asin}?th=1&psc=1`,
-  ];
-
-  for (const candidateUrl of candidateUrls) {
-    if (candidateUrl === currentUrl.toString()) continue;
-    const fetched = await fetchHtml(candidateUrl, 8_000);
-    if (!fetched.html || isBlockedPage(fetched.html, fetched.status)) continue;
-    const priceText = amazonPriceText(loadHtml(fetched.html), fetched.html);
-    if (isReasonableAmazonPrice(parsePrice(priceText))) return priceText;
-  }
-
-  return undefined;
-}
-
-async function amazonPriceWithPlaywright(url: string): Promise<FieldEvidence | undefined> {
+async function amazonPriceWithPlaywright(url: string, asin?: string): Promise<FieldEvidence | undefined> {
   if (process.env.PRODUCT_EXTRACTOR_DISABLE_AUTO_PLAYWRIGHT === "true") return undefined;
 
   let browser: Awaited<ReturnType<typeof import("playwright").chromium.launch>> | undefined;
@@ -418,21 +327,53 @@ async function amazonPriceWithPlaywright(url: string): Promise<FieldEvidence | u
       viewport: { width: 1280, height: 900 },
     });
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15_000 });
-    await page.waitForSelector(
-      "#corePriceDisplay_desktop_feature_div .a-price .a-offscreen, #corePriceDisplay_mobile_feature_div .a-price .a-offscreen, #corePrice_feature_div .a-price .a-offscreen, #apex_desktop .a-price .a-offscreen, .a-price .a-offscreen",
-      { timeout: 8_000 },
-    ).catch(() => undefined);
-    const rawValue = await page
-      .locator(
-        "#corePriceDisplay_desktop_feature_div .a-price .a-offscreen, #corePriceDisplay_mobile_feature_div .a-price .a-offscreen, #corePrice_feature_div .a-price .a-offscreen, #apex_desktop .a-price .a-offscreen, .a-price .a-offscreen",
-      )
-      .first()
-      .textContent({ timeout: 2_000 })
-      .catch(() => undefined);
-    if (!rawValue) return undefined;
-    const evidence = evidenceForAmazonPrice(rawValue, "playwright", {
+    await page.waitForSelector("#productTitle", { timeout: 8_000 }).catch(() => undefined);
+    const containerSelector = [
+      "#corePriceDisplay_desktop_feature_div",
+      "#corePriceDisplay_mobile_feature_div",
+      "#corePrice_feature_div",
+      "#apex_desktop",
+      "#newAccordionRow",
+      "[data-feature-name='corePrice']",
+      "[data-csa-c-content-id='corePrice']",
+      "[data-csa-c-slot-id*='corePrice']",
+    ].join(", ");
+    await page.waitForSelector(containerSelector, { timeout: 10_000 }).catch(() => undefined);
+    const candidate = await page.evaluate(
+      ({ containerSelector, asin }) => {
+        const clean = (value: string | null | undefined) =>
+          value?.replace(/\s+/g, " ").trim();
+        for (const container of Array.from(document.querySelectorAll(containerSelector))) {
+          const tiedAsin =
+            container.getAttribute("data-csa-c-asin") ??
+            container.closest("[data-csa-c-asin]")?.getAttribute("data-csa-c-asin");
+          const context = container.textContent ?? "";
+          if (asin && tiedAsin && tiedAsin !== asin) continue;
+          if (asin && !tiedAsin && !container.outerHTML.includes(asin)) continue;
+
+          const rejected = /monthly|\/mo|coupon|subscribe|shipping|delivery|warranty|protection|sponsored|recommend|comparison|list price|was:/i.test(
+            context,
+          );
+          if (rejected) continue;
+
+          const node = container.querySelector(
+            ".a-price:not([data-a-strike='true']) .a-offscreen, #priceblock_ourprice, #priceblock_dealprice",
+          );
+          const rawValue = clean(node?.textContent);
+          if (rawValue) return rawValue;
+
+          const whole = clean(container.querySelector(".a-price-whole")?.textContent)?.replace(/[^\d,]/g, "");
+          const fraction = clean(container.querySelector(".a-price-fraction")?.textContent)?.replace(/[^\d]/g, "");
+          if (whole) return `$${whole}.${(fraction ?? "00").padEnd(2, "0").slice(0, 2)}`;
+        }
+        return undefined;
+      },
+      { containerSelector, asin },
+    );
+    if (!candidate) return undefined;
+    const evidence = evidenceForAmazonPrice(candidate, "playwright", {
       selector: ".a-price .a-offscreen",
-      confidence: 90,
+      confidence: 95,
     });
     return evidence.accepted ? evidence : undefined;
   } catch (error) {
@@ -489,23 +430,23 @@ export async function extractAmazonProduct(context: ExtractorContext) {
         accepted: true,
       });
     }
+
     evidence.priceCandidates.push(...amazonPriceEvidence($, context.html, asin));
-    const acceptedPriceEvidence = chooseAmazonPriceEvidence(evidence.priceCandidates);
-    let priceText =
-      cleanText(acceptedPriceEvidence?.rawValue) ??
-      amazonPriceText($, context.html) ??
-      (await amazonPriceFromAlternatePages(asin, context.normalized.url));
-    let price = parsePrice(priceText);
-    if (!isReasonableAmazonPrice(price)) {
-      const playwrightEvidence = await amazonPriceWithPlaywright(context.normalized.normalizedUrl);
+    let selectedPriceEvidence = chooseAmazonPriceEvidence(evidence.priceCandidates);
+
+    if (!selectedPriceEvidence) {
+      const playwrightEvidence = await amazonPriceWithPlaywright(
+        context.normalized.normalizedUrl,
+        asin,
+      );
       if (playwrightEvidence) {
         evidence.priceCandidates.push(playwrightEvidence);
-        if (playwrightEvidence.accepted) {
-          priceText = cleanText(playwrightEvidence.rawValue);
-          price = parsePrice(playwrightEvidence.rawValue);
-        }
+        selectedPriceEvidence = playwrightEvidence.accepted ? playwrightEvidence : undefined;
       }
     }
+
+    const priceText = cleanText(selectedPriceEvidence?.rawValue);
+    const price = parsePrice(priceText);
     const brand =
       cleanText($("#bylineInfo").text().replace(/^Visit the /i, "").replace(/ Store$/i, "")) ??
       cleanText($("tr:contains('Brand') td").last().text());
@@ -521,15 +462,16 @@ export async function extractAmazonProduct(context: ExtractorContext) {
     result = mergeProductResults(result, {
       title,
       brand,
-      price,
-      currency: parseCurrency(priceText),
+      price: isReasonableAmazonPrice(price) ? price : undefined,
+      currency: isReasonableAmazonPrice(price) ? parseCurrency(priceText) ?? "USD" : undefined,
       images: productImages,
       variants: {
         colors: amazonVariantOptions($, "variation_color_name"),
         sizes: amazonVariantOptions($, "variation_size_name"),
         styles: amazonVariantOptions($, "variation_style_name"),
-        capacities: amazonVariantOptions($, "variation_size_name")
-          .filter((option) => /\b(?:gb|tb|pack|count)\b/i.test(option.label)),
+        capacities: amazonVariantOptions($, "variation_size_name").filter((option) =>
+          /\b(?:gb|tb|pack|count)\b/i.test(option.label),
+        ),
         raw: {
           asin,
           twisterPresent: /twister|variationValues|dimensionValuesDisplayData/i.test(
@@ -545,8 +487,12 @@ export async function extractAmazonProduct(context: ExtractorContext) {
           : [],
       },
     });
+
     result.price = isReasonableAmazonPrice(price) ? price : undefined;
     result.currency = result.price ? parseCurrency(priceText) ?? "USD" : undefined;
+    if (!result.price) {
+      result.extraction.warnings.push("Amazon price requires rendered PDP extraction");
+    }
     result = replaceImages(result, productImages);
     result = replaceVariants(result, {
       colors: amazonVariantOptions($, "variation_color_name"),
@@ -563,6 +509,7 @@ export async function extractAmazonProduct(context: ExtractorContext) {
 
   if (!context.html) {
     result.extraction.warnings.push("Amazon HTML was unavailable; extraction is limited to URL metadata");
+    result.extraction.warnings.push("Amazon price requires rendered PDP extraction");
   }
   if (!result.title) {
     result.extraction.warnings.push("Amazon title not found; page may be blocked or rendered dynamically");
