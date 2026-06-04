@@ -2,7 +2,7 @@ import { normalizeAvailability } from '../../domain/availability.js';
 import { evidenceRef, type Evidence } from '../../domain/evidence.js';
 import { field, type ProductVariant, type PartialProductExtractResult } from '../../domain/product-extract-result.js';
 import { normalizeImageList } from '../../normalization/images.js';
-import { parsePrice, normalizeCurrency } from '../../normalization/price.js';
+import { parsePrice } from '../../normalization/price.js';
 import { cleanText, firstCleanText, uniqNormalized } from '../../normalization/text.js';
 import { asArray, deepFindObjects, isRecord, type JsonObject } from '../../utils/json.js';
 
