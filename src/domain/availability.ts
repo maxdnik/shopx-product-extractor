@@ -15,8 +15,8 @@ const AVAILABILITY_MAP: Array<[RegExp, ProductAvailability]> = [
   [/pre[\s-]?order|preorder/i, 'PREORDER'],
   [/back[\s-]?order|backorder/i, 'BACKORDER'],
   [/low stock|limited stock|only \d+ left/i, 'LOW_STOCK'],
-  [/out of stock|sold out|unavailable|notify me/i, 'OUT_OF_STOCK'],
-  [/in stock|available|add to cart|add to bag|buy now/i, 'IN_STOCK']
+  [/out\s*of\s*stock|outofstock|sold out|unavailable|notify me/i, 'OUT_OF_STOCK'],
+  [/in\s*stock|instock|available|add to cart|add to bag|buy now/i, 'IN_STOCK']
 ];
 
 export function normalizeAvailability(input: unknown): ProductAvailability {

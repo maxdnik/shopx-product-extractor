@@ -21,7 +21,10 @@ export class InMemoryProductCache implements ProductCache {
     const entry = this.entries.get(cacheKey);
     if (!entry) return null;
     const { isCacheUsable } = await import('./cache-policy.js');
-    return isCacheUsable(entry, policy) ? entry : null;
+    if (!isCacheUsable(entry, policy)) return null;
+    const result = structuredClone(entry.result);
+    result.extraction.cacheHit = true;
+    return { ...entry, result };
   }
 
   async set(entry: CachedProduct): Promise<void> {

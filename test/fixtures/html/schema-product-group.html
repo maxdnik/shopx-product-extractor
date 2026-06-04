@@ -1,0 +1,57 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Test Runner Shoe</title>
+    <meta property="og:title" content="Fallback OG Shoe" />
+    <meta property="og:image" content="https://cdn.example.com/og-shoe.jpg" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "ProductGroup",
+        "name": "ShopX Runner",
+        "brand": { "@type": "Brand", "name": "ShopX Labs" },
+        "description": "A benchmark running shoe.",
+        "image": ["https://cdn.example.com/runner-main.jpg"],
+        "sku": "RUNNER-PARENT",
+        "productID": "runner-parent-1",
+        "offers": {
+          "@type": "Offer",
+          "price": "199.99",
+          "priceCurrency": "USD",
+          "availability": "https://schema.org/InStock"
+        },
+        "hasVariant": [
+          {
+            "@type": "Product",
+            "name": "ShopX Runner / Black / M",
+            "sku": "RUNNER-BLK-M",
+            "color": "Black",
+            "size": "M",
+            "offers": {
+              "@type": "Offer",
+              "price": "199.99",
+              "priceCurrency": "USD",
+              "availability": "https://schema.org/InStock"
+            }
+          },
+          {
+            "@type": "Product",
+            "name": "ShopX Runner / White / L",
+            "sku": "RUNNER-WHT-L",
+            "color": "White",
+            "size": "L",
+            "offers": {
+              "@type": "Offer",
+              "price": "199.99",
+              "priceCurrency": "USD",
+              "availability": "https://schema.org/OutOfStock"
+            }
+          }
+        ]
+      }
+    </script>
+  </head>
+  <body>
+    <h1>ShopX Runner</h1>
+  </body>
+</html>

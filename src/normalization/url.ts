@@ -28,7 +28,7 @@ export function normalizeProductUrl(input: string): NormalizedUrl {
     }
   }
 
-  url.hostname = url.hostname.toLowerCase();
+  url.hostname = url.hostname.toLowerCase().replace(/^www\./, '');
   url.pathname = normalizePathname(url.pathname);
 
   return {
