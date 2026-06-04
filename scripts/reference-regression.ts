@@ -12,6 +12,10 @@ type ReferenceCase = {
     min: number;
     max: number;
   };
+  expectedPrice?: {
+    value: number;
+    tolerance: number;
+  };
   minImages?: number;
   minColors?: number;
   minSizes?: number;
@@ -82,6 +86,7 @@ const references: ReferenceCase[] = [
     titleIncludes: "LEGO",
     brandIncludes: "Star Wars",
     price: { min: 20, max: 500 },
+    expectedPrice: { value: 149.99, tolerance: 0.75 },
     minImages: 4,
     minColors: 0,
     minSizes: 0,
@@ -94,6 +99,7 @@ const references: ReferenceCase[] = [
     titleIncludes: "AirPods",
     brandIncludes: "Apple",
     price: { min: 20, max: 300 },
+    expectedPrice: { value: 99, tolerance: 0.75 },
     minImages: 4,
     minColors: 0,
     minSizes: 0,
@@ -413,6 +419,15 @@ function assertProduct(reference: ReferenceCase, result: ProductExtractResult) {
     assert(
       result.price >= reference.price.min && result.price <= reference.price.max,
       `${reference.name}: price ${result.price} is outside expected range ${reference.price.min}-${reference.price.max}`,
+    );
+  }
+
+  if (reference.expectedPrice) {
+    assert(typeof result.price === "number", `${reference.name}: price is missing`);
+    const delta = Math.abs(result.price - reference.expectedPrice.value);
+    assert(
+      delta <= reference.expectedPrice.tolerance,
+      `${reference.name}: price ${result.price} differs materially from expected PDP price ${reference.expectedPrice.value} (tolerance ${reference.expectedPrice.tolerance})`,
     );
   }
 
