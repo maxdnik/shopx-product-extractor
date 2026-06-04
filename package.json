@@ -10,7 +10,7 @@
     "debug:extract": "tsx scripts/debug-extract.ts",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:references": "tsx scripts/reference-regression.ts",
+    "test:references": "PRODUCT_EXTRACTOR_ENABLE_PLAYWRIGHT=true tsx scripts/reference-regression.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm run lint && npm run test && npm run build"

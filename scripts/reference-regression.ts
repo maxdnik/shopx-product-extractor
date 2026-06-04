@@ -336,6 +336,13 @@ const references: ReferenceCase[] = [
   },
 ];
 
+const PLAYWRIGHT_REQUIRED_STORES = new Set([
+  "amazon",
+  "thenorthface",
+  "ralphlauren",
+  "calvinklein",
+]);
+
 function fail(message: string): never {
   throw new Error(message);
 }
@@ -467,6 +474,7 @@ const rows: Array<Record<string, unknown>> = [];
 for (const reference of references) {
   const result = await extractProduct(reference.url, {
     timeoutMs: Number(process.env.PRODUCT_EXTRACTOR_REGRESSION_TIMEOUT_MS ?? 20_000),
+    usePlaywright: PLAYWRIGHT_REQUIRED_STORES.has(reference.store),
   });
 
   rows.push({
