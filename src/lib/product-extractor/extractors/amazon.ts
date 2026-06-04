@@ -319,60 +319,125 @@ async function amazonPriceWithPlaywright(url: string, asin?: string): Promise<Fi
   try {
     const { chromium } = await import("playwright");
     browser = await chromium.launch({ headless: true, timeout: 12_000 });
-    const page = await browser.newPage({
+    const context = await browser.newContext({
       userAgent:
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-        "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 " +
+        "(KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
       locale: "en-US",
-      viewport: { width: 1280, height: 900 },
+      timezoneId: "America/New_York",
+      viewport: { width: 390, height: 844 },
+      deviceScaleFactor: 3,
+      isMobile: true,
+      hasTouch: true,
+      extraHTTPHeaders: {
+        "Accept-Language": "en-US,en;q=0.9",
+        "Upgrade-Insecure-Requests": "1",
+      },
     });
+    const page = await context.newPage();
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15_000 });
-    await page.waitForSelector("#productTitle", { timeout: 8_000 }).catch(() => undefined);
-    const containerSelector = [
-      "#corePriceDisplay_desktop_feature_div",
+    await page.waitForLoadState("networkidle", { timeout: 8_000 }).catch(() => undefined);
+    await page.waitForSelector("#productTitle, h1#title, h1", { timeout: 12_000 }).catch(() => undefined);
+    const priceContainers = [
       "#corePriceDisplay_mobile_feature_div",
+      "#corePriceDisplay_desktop_feature_div",
       "#corePrice_feature_div",
       "#apex_desktop",
       "#newAccordionRow",
+      "#tp_price_block_total_price_ww",
       "[data-feature-name='corePrice']",
       "[data-csa-c-content-id='corePrice']",
       "[data-csa-c-slot-id*='corePrice']",
-    ].join(", ");
-    await page.waitForSelector(containerSelector, { timeout: 10_000 }).catch(() => undefined);
+    ];
+    const containerSelector = priceContainers.join(", ");
+    await page.waitForSelector(containerSelector, { state: "attached", timeout: 12_000 }).catch(() => undefined);
     const candidate = await page.evaluate(
-      ({ containerSelector, asin }) => {
+      ({ priceContainers, asin }) => {
         const clean = (value: string | null | undefined) =>
           value?.replace(/\s+/g, " ").trim();
-        for (const container of Array.from(document.querySelectorAll(containerSelector))) {
-          const tiedAsin =
-            container.getAttribute("data-csa-c-asin") ??
-            container.closest("[data-csa-c-asin]")?.getAttribute("data-csa-c-asin");
-          const context = container.textContent ?? "";
-          if (asin && tiedAsin && tiedAsin !== asin) continue;
-          if (asin && !tiedAsin && !container.outerHTML.includes(asin)) continue;
-
-          const rejected = /monthly|\/mo|coupon|subscribe|shipping|delivery|warranty|protection|sponsored|recommend|comparison|list price|was:/i.test(
-            context,
+        const isVisible = (element: Element) => {
+          const style = window.getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return (
+            style.visibility !== "hidden" &&
+            style.display !== "none" &&
+            rect.width > 0 &&
+            rect.height > 0
           );
-          if (rejected) continue;
+        };
+        const candidates: Array<{
+          rawValue: string;
+          selector: string;
+          containerSelector: string;
+          priority: number;
+          visible: boolean;
+        }> = [];
 
-          const node = container.querySelector(
-            ".a-price:not([data-a-strike='true']) .a-offscreen, #priceblock_ourprice, #priceblock_dealprice",
-          );
-          const rawValue = clean(node?.textContent);
-          if (rawValue) return rawValue;
+        priceContainers.forEach((containerSelector, containerIndex) => {
+          Array.from(document.querySelectorAll(containerSelector)).forEach((container) => {
+            const tiedAsin =
+              container.getAttribute("data-csa-c-asin") ??
+              container.closest("[data-csa-c-asin]")?.getAttribute("data-csa-c-asin");
+            const context = container.textContent ?? "";
+            if (asin && tiedAsin && tiedAsin !== asin) return;
+            if (asin && !tiedAsin && !container.outerHTML.includes(asin)) return;
 
-          const whole = clean(container.querySelector(".a-price-whole")?.textContent)?.replace(/[^\d,]/g, "");
-          const fraction = clean(container.querySelector(".a-price-fraction")?.textContent)?.replace(/[^\d]/g, "");
-          if (whole) return `$${whole}.${(fraction ?? "00").padEnd(2, "0").slice(0, 2)}`;
+            const containerVisible = isVisible(container);
+            const hasRejectedContext = /monthly|\/mo|coupon|subscribe|shipping|delivery|warranty|protection|sponsored|recommend|comparison/i.test(
+              context,
+            );
+            if (hasRejectedContext && !/priceToPay|corePrice|a-price/i.test(container.outerHTML)) return;
+
+            Array.from(container.querySelectorAll(".a-price:not([data-a-strike='true'])")).forEach(
+              (priceNode, priceIndex) => {
+                const nodeText = priceNode.textContent ?? "";
+                if (/list price|was:|strike|data-a-strike/i.test(priceNode.outerHTML + nodeText)) return;
+                const whole = clean(priceNode.querySelector(".a-price-whole")?.textContent)?.replace(/[^0-9,]/g, "");
+                const fraction = clean(priceNode.querySelector(".a-price-fraction")?.textContent)?.replace(/[^0-9]/g, "");
+                if (whole) {
+                  candidates.push({
+                    rawValue: `$${whole}.${(fraction || "00").padEnd(2, "0").slice(0, 2)}`,
+                    selector: ".a-price-whole + .a-price-fraction",
+                    containerSelector,
+                    visible: containerVisible,
+                    priority: containerIndex * 100 + (containerVisible ? 0 : 40) + priceIndex,
+                  });
+                }
+              },
+            );
+
+            Array.from(
+              container.querySelectorAll(
+                ".a-price:not([data-a-strike='true']) .a-offscreen, #priceblock_ourprice, #priceblock_dealprice",
+              ),
+            ).forEach((node, nodeIndex) => {
+              const rawValue = clean(node.textContent);
+              if (!rawValue) return;
+              if (/list price|was:|strike|data-a-strike/i.test((node as Element).outerHTML + rawValue)) return;
+              candidates.push({
+                rawValue,
+                selector: ".a-price .a-offscreen",
+                containerSelector,
+                visible: containerVisible,
+                priority: containerIndex * 100 + (containerVisible ? 20 : 60) + nodeIndex,
+              });
+            });
+          });
+        });
+
+        candidates.sort((left, right) => left.priority - right.priority);
+        for (const candidate of candidates) {
+          if (/\$\s?\d{1,4}(?:,\d{3})*(?:\.\d{2})?/.test(candidate.rawValue)) {
+            return candidate;
+          }
         }
         return undefined;
       },
-      { containerSelector, asin },
+      { priceContainers, asin },
     );
     if (!candidate) return undefined;
-    const evidence = evidenceForAmazonPrice(candidate, "playwright", {
-      selector: ".a-price .a-offscreen",
+    const evidence = evidenceForAmazonPrice(candidate.rawValue, "playwright", {
+      selector: `${candidate.containerSelector} ${candidate.selector}`,
       confidence: 95,
     });
     return evidence.accepted ? evidence : undefined;
